@@ -7,13 +7,13 @@ import pool from "../db/db.js";
 import { sendVerificationEmail } from "../util/emailService.js";
 
 const router = Router();
-
+const isProd = process.env.NODE_ENV === "production";
 const COOKIE_NAME = "auth_token";
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret";
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  sameSite: "none",
-  secure: process.env.NODE_ENV === "production",
+  sameSite: isProd ? "none" : "lax",
+  secure: isProd,
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
@@ -28,6 +28,14 @@ const signToken = (user) =>
 
 const sendAuthCookie = (res, token) =>
   res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
+
+const generateGuestEmail = () => {
+  const unique =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : crypto.randomBytes(8).toString("hex");
+  return `guest_${unique}@guest.local`;
+};
 
 /* ---------- 取得登入資訊 ---------- */
 router.get("/me", (req, res) => {
@@ -174,12 +182,40 @@ router.post("/login-email", async (req, res, next) => {
       return res.status(401).json({ message: "帳號不存在或未驗證" });
     }
 
+    if (!user.password_hash) {
+      return res
+        .status(401)
+        .json({ message: "此帳號尚未設定密碼，請用 Google 登入或先設定密碼" });
+    }
+
     const user = rows[0];
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return res.status(401).json({ message: "Email 或密碼錯誤" });
 
     const token = signToken({ id: user.id, email });
     sendAuthCookie(res, token).json({ userId: user.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// /* ---------- 匿名登入 ---------- */
+router.post("/login-guest", async (_req, res, next) => {
+  try {
+    const email = generateGuestEmail();
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, email_verified)
+       VALUES ($1, TRUE)
+       RETURNING id, email`,
+      [email]
+    );
+
+    const guest = rows[0];
+    const token = signToken(
+      { id: guest.id, email: guest.email },
+      { ttl: "1d" }
+    );
+    sendAuthCookie(res, token).json({ userId: guest.id, email: guest.email });
   } catch (err) {
     next(err);
   }
