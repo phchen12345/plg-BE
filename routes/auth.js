@@ -12,7 +12,7 @@ const COOKIE_NAME = "auth_token";
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret";
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  sameSite: "lax",
+  sameSite: "none",
   secure: process.env.NODE_ENV === "production",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
