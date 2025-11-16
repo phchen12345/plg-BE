@@ -22,6 +22,10 @@ app.use("/api/cart", cartRouter);
 app.use("/api/auth", AuthRouter);
 app.use("/api/auth/google", AuthGoogleRouter);
 
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
 app.get("/api/dial-codes", (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json([
