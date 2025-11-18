@@ -6,6 +6,8 @@ import cookieParser from "cookie-parser";
 import cartRouter from "./routes/cart.js";
 import AuthRouter from "./routes/auth.js";
 import AuthGoogleRouter from "./routes/google_auth.js";
+import logisticsRouter from "./routes/logistics.js";
+import ordersRouter from "./routes/orders.js";
 
 const app = express();
 
@@ -21,6 +23,8 @@ app.use(cookieParser());
 app.use("/api/cart", cartRouter);
 app.use("/api/auth", AuthRouter);
 app.use("/api/auth/google", AuthGoogleRouter);
+app.use("/api/logistics", logisticsRouter);
+app.use("/api/orders", ordersRouter);
 
 app.get("/", (req, res) => {
   res.send("OK");

@@ -1,4 +1,19 @@
-INSERT INTO "products" ("id", "name", "tag", "price_cents", "image_url", "created_at") VALUES (2, 'Mitchell&NessxPLGxTAOYUAN PILOTS 2025冠軍紀念帽', '#黑色', 1080, '/cap.jpg', '2025-11-13 20:08:12.224336+08');
-INSERT INTO "products" ("id", "name", "tag", "price_cents", "image_url", "created_at") VALUES (1, 'PLG 第五季限定 團隊聯名球衣', '#黑色', 2280, '/sport_short.jpg', '2025-11-13 20:08:12.224336+08');
-INSERT INTO "products" ("id", "name", "tag", "price_cents", "image_url", "created_at") VALUES (3, 'Mitchell&NessxPLGxTAOYUAN PILOTS 2025冠軍紀念T', '#黑色', 1280, '/t-shirt.jpg', '2025-11-13 20:08:12.224336+08');
-INSERT INTO "products" ("id", "name", "tag", "price_cents", "image_url", "created_at") VALUES (4, 'PLG經典款束口運動PRO SOCKS', '#白色', 280, '/socks.jpg', '2025-11-13 20:08:12.224336+08');
+CREATE TABLE IF NOT EXISTS shopify_orders (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shopify_order_id BIGINT NOT NULL UNIQUE,
+  shopify_order_name TEXT NOT NULL,
+  shopify_order_number INTEGER,
+  currency TEXT,
+  subtotal_price TEXT,
+  total_price TEXT,
+  financial_status TEXT,
+  fulfillment_status TEXT,
+  status_url TEXT,
+  line_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_shopify_orders_user_id
+  ON shopify_orders(user_id);
