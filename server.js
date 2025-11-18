@@ -1,13 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import cartRouter from "./routes/cart.js";
 import AuthRouter from "./routes/auth.js";
 import AuthGoogleRouter from "./routes/google_auth.js";
 import logisticsRouter from "./routes/logistics.js";
 import ordersRouter from "./routes/orders.js";
+import webhookRouter from "./routes/webhook.js";
 
 const app = express();
 
@@ -17,7 +17,14 @@ app.use(
     credentials: true,
   })
 );
-app.use(bodyParser.json());
+
+app.post(
+  "/api/webhooks/shopify",
+  express.raw({ type: "application/json" }),
+  webhookRouter
+);
+
+app.use(express.json());
 app.use(cookieParser());
 
 app.use("/api/cart", cartRouter);
@@ -33,7 +40,7 @@ app.get("/", (req, res) => {
 app.get("/api/dial-codes", (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json([
-    { label: "+886 臺灣", value: "+886" },
+    { label: "+886 台灣", value: "+886" },
     { label: "+852 香港", value: "+852" },
     { label: "+853 澳門", value: "+853" },
   ]);
