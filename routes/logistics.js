@@ -11,7 +11,7 @@ const SERVER_BASE_URL =
   process.env.SERVER_BASE_URL ??
   process.env.BASE_URL ??
   "http://localhost:3001";
-const CLIENT_BASE_URL = process.env.CLIENT_BASE_URL ?? "http://localhost:3000";
+const CLIENT_BASE_URL = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
 
 const ECPAY_MAP_URL =
   process.env.NODE_ENV === "production"

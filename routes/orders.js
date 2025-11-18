@@ -59,7 +59,7 @@ router.post("/orders", requireAuth, async (req, res, next) => {
     const lineItems = items.map((item) => ({
       title: item.name ?? `PLG 商品 #${item.productId}`,
       quantity: item.quantity,
-      price: ((item.priceCents ?? 0) / 100).toFixed(2),
+      price: item.priceCents.toFixed(2),
       sku: String(item.productId),
     }));
 
