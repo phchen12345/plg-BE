@@ -16,7 +16,7 @@ function verifyShopifyHmac(rawBody, hmacHeader) {
   );
 }
 
-router.post("/", async (req, res) => {
+router.post("/shopify", async (req, res) => {
   const hmac = req.get("X-Shopify-Hmac-Sha256");
   if (!verifyShopifyHmac(req.body, hmac)) {
     return res.status(401).send("Invalid signature");

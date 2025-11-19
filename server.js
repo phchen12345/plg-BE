@@ -18,8 +18,8 @@ app.use(
   })
 );
 
-app.post(
-  "/api/webhooks/shopify",
+app.use(
+  "/api/webhooks",
   express.raw({ type: "application/json" }),
   webhookRouter
 );
