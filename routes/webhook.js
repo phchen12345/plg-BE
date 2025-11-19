@@ -18,6 +18,7 @@ function verifyShopifyHmac(rawBody, hmacHeader) {
 
 router.post("/shopify", async (req, res) => {
   console.log("webhook hit:", req.get("X-Shopify-Topic"));
+  console.log("is buffer", Buffer.isBuffer(req.body), req.get("content-type"));
   const hmac = req.get("X-Shopify-Hmac-Sha256");
   if (!verifyShopifyHmac(req.body, hmac)) {
     return res.status(401).send("Invalid signature");
