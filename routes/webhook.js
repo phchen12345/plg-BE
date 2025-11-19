@@ -55,6 +55,8 @@ router.post("/shopify", async (req, res) => {
     ]
   );
 
+  console.log("raw payload type:", typeof req.body);
+
   res.status(200).send("ok");
 });
 
