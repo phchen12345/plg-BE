@@ -23,6 +23,7 @@ router.post("/shopify", async (req, res) => {
   }
 
   const payload = JSON.parse(req.body.toString("utf8"));
+  console.log("incoming webhook", payload.id, req.get("X-Shopify-Topic"));
   const shopifyOrderId = payload.id;
   if (!shopifyOrderId) return res.status(400).send("Missing order id");
 
@@ -54,8 +55,6 @@ router.post("/shopify", async (req, res) => {
       ),
     ]
   );
-
-  console.log("raw payload type:", typeof req.body);
 
   res.status(200).send("ok");
 });
