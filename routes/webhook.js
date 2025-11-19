@@ -10,6 +10,9 @@ function verifyShopifyHmac(rawBody, hmacHeader) {
     .createHmac("sha256", SHOPIFY_WEBHOOK_SECRET)
     .update(rawBody, "utf8")
     .digest("base64");
+
+  console.log("digest", digest, "header", hmacHeader);
+
   return crypto.timingSafeEqual(
     Buffer.from(digest),
     Buffer.from(hmacHeader ?? "", "utf8")
