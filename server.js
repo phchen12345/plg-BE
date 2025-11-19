@@ -18,11 +18,7 @@ app.use(
   })
 );
 
-app.use(
-  "/api/webhooks",
-  express.raw({ type: "application/json" }),
-  webhookRouter
-);
+app.use("/api/webhooks", express.raw({ type: "*/*" }), webhookRouter);
 
 app.use(express.json());
 app.use(cookieParser());
