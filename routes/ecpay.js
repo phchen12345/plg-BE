@@ -78,6 +78,11 @@ const persistPendingOrder = async ({
   totalAmount,
   orderPayload,
 }) => {
+  console.log("[ecpay] persistPendingOrder", {
+    tradeNo,
+    userId,
+    totalAmount,
+  });
   await pool.query(
     `INSERT INTO ecpay_transactions (
        merchant_trade_no,
@@ -206,6 +211,13 @@ const buildShopifyOrderPayload = (storedOrder = {}, paymentResult = {}) => {
 router.post("/checkout", requireAuth, async (req, res, next) => {
   try {
     const { tradeNo, totalAmount, description, returnURL, order } = req.body;
+    console.log("[ecpay] /checkout request", {
+      tradeNo,
+      totalAmount,
+      description,
+      hasOrder: !!order,
+      orderItemCount: order?.items?.length ?? 0,
+    });
 
     if (!tradeNo || !totalAmount) {
       return res.status(400).json({ message: "缺少交易編號或金額" });
@@ -237,6 +249,8 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
     };
 
     const CheckMacValue = encodeParams(payload);
+    console.log("[ecpay] payload sent to ECPay:", payload);
+    console.log("[ecpay] calculated CheckMacValue:", CheckMacValue);
 
     res.json({
       action: ECPAY_BASE_URL,
@@ -249,16 +263,25 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
 
 router.post("/payment-return", async (req, res) => {
   const payload = req.body;
-  console.log("[payment-return] payload", req.body);
+  console.log("[payment-return] payload", payload);
   const receivedCheckMac = payload.CheckMacValue;
   const { CheckMacValue: _, ...others } = payload;
   const calculated = encodeParams(others);
+  console.log("[payment-return] checkmac compare", {
+    received: receivedCheckMac,
+    calculated,
+  });
 
   if (receivedCheckMac !== calculated) {
+    console.warn(
+      "[payment-return] CheckMac mismatch",
+      payload.MerchantTradeNo
+    );
     return res.status(400).send("0|CheckMacValue Error");
   }
 
   if (payload.RtnCode !== "1") {
+    console.log("[payment-return] non-success RtnCode", payload.RtnCode);
     return res.send("1|OK");
   }
 
@@ -269,6 +292,10 @@ router.post("/payment-return", async (req, res) => {
   }
 
   if (pendingOrder.processed_at) {
+    console.log(
+      "[payment-return] order already processed",
+      payload.MerchantTradeNo
+    );
     return res.send("1|OK");
   }
 
@@ -277,15 +304,25 @@ router.post("/payment-return", async (req, res) => {
       pendingOrder.order_payload,
       payload
     );
+    console.log("[payment-return] posting to Shopify", shopifyPayload);
     const { data } = await shopifyClient.post("/orders.json", shopifyPayload);
     const shopifyOrder = data?.order;
+    console.log("[payment-return] Shopify response", data);
     if (!shopifyOrder?.id) {
       throw new Error("Shopify did not return order id");
     }
     await markTransactionProcessed(payload.MerchantTradeNo, shopifyOrder);
+    console.log(
+      "[payment-return] markTransactionProcessed",
+      payload.MerchantTradeNo,
+      shopifyOrder.id
+    );
     return res.send("1|OK");
   } catch (err) {
-    console.error("[ecpay] Shopify order creation failed", err);
+    console.error(
+      "[ecpay] Shopify order creation failed",
+      err.response?.data ?? err
+    );
     return res.status(500).send("0|Shopify Order Failed");
   }
 });
