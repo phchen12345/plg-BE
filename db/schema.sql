@@ -1,2 +1,2 @@
-ALTER TABLE products
-  ALTER COLUMN shopify_variant_id TYPE TEXT;
+ALTER TABLE ecpay_transactions
+  ALTER COLUMN user_id TYPE TEXT USING user_id::text;

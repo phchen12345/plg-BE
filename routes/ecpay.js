@@ -97,7 +97,7 @@ const persistPendingOrder = async ({
        shopify_order_name = NULL,
        shopify_order_number = NULL,
        updated_at = NOW()`,
-    [tradeNo, userId, JSON.stringify(orderPayload), totalAmount]
+    [tradeNo, userId, totalAmount, JSON.stringify(orderPayload)]
   );
 };
 
