@@ -4,6 +4,7 @@ import crypto from "crypto";
 import axios from "axios";
 import pool from "../db/db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { channel } from "diagnostics_channel";
 
 const router = Router();
 router.use(express.urlencoded({ extended: false }));
@@ -248,6 +249,7 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
 
 router.post("/payment-return", async (req, res) => {
   const payload = req.body;
+  console.log("[payment-return] payload", req.body);
   const receivedCheckMac = payload.CheckMacValue;
   const { CheckMacValue: _, ...others } = payload;
   const calculated = encodeParams(others);
