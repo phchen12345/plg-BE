@@ -13,10 +13,7 @@ const SERVER_BASE_URL =
   "http://localhost:3001";
 const CLIENT_BASE_URL = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
 
-const ECPAY_MAP_URL =
-  process.env.NODE_ENV === "production"
-    ? "https://logistics.ecpay.com.tw/Express/map"
-    : "https://logistics-stage.ecpay.com.tw/Express/map";
+const ECPAY_MAP_URL = "https://logistics-stage.ecpay.com.tw/Express/map";
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
