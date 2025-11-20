@@ -47,7 +47,7 @@ const formatDate = (date) => {
 
 const encodeParams = (params) => {
   const query = Object.keys(params)
-    .filter((key) => params[key] !== undefined && params[key] !== "")
+    .filter((key) => params[key] !== undefined) // 保留 ""
     .sort((a, b) => a.localeCompare(b))
     .map((key) => `${key}=${params[key]}`)
     .join("&");
@@ -273,10 +273,7 @@ router.post("/payment-return", async (req, res) => {
   });
 
   if (receivedCheckMac !== calculated) {
-    console.warn(
-      "[payment-return] CheckMac mismatch",
-      payload.MerchantTradeNo
-    );
+    console.warn("[payment-return] CheckMac mismatch", payload.MerchantTradeNo);
     return res.status(400).send("0|CheckMacValue Error");
   }
 
