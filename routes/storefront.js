@@ -31,9 +31,7 @@ const cartCreateMutation = `
 router.post("/checkout", async (req, res, next) => {
   try {
     if (!SHOPIFY_STORE_DOMAIN || !SHOPIFY_STOREFRONT_ACCESS_TOKEN) {
-      return res
-        .status(500)
-        .json({ message: "Shopify Storefront API 未設定" });
+      return res.status(500).json({ message: "Shopify Storefront API 未設定" });
     }
 
     const rawLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
@@ -55,15 +53,10 @@ router.post("/checkout", async (req, res, next) => {
     }
 
     const cartInput = {
-      lines: lines.map((line) => ({
-        merchandiseId: line.merchandiseId,
-        quantity: line.quantity,
-        ...(line.sellingPlanId ? { sellingPlanId: line.sellingPlanId } : {}),
-        ...(line.attributes ? { attributes: line.attributes } : {}),
-      })),
-      customAttributes: req.body?.customAttributes,
+      lines,
+      attributes: req.body?.attributes,
       buyerIdentity: req.body?.buyerIdentity,
-      shippingAddress: req.body?.shippingAddress,
+      note: req.body?.note,
     };
 
     const { data } = await axios.post(
