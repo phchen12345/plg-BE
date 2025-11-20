@@ -1,8 +1,12 @@
 // routes/ecpay.js
-import { Router } from "express";
+import express, { Router } from "express";
 import crypto from "crypto";
+import axios from "axios";
+import pool from "../db/db.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
+router.use(express.urlencoded({ extended: false }));
 
 const ECPAY_MERCHANT_ID = process.env.ECPAY_MERCHANT_ID ?? "2000132";
 const ECPAY_HASH_KEY = process.env.ECPAY_HASH_KEY ?? "5294y06JbISpM5x9";
@@ -10,6 +14,23 @@ const ECPAY_HASH_IV = process.env.ECPAY_HASH_IV ?? "v77hoKGq4kWxNNIS";
 const ECPAY_BASE_URL =
   process.env.ECPAY_PAYMENT_URL ??
   "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5";
+
+const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? "2024-04";
+
+if (!SHOPIFY_STORE_DOMAIN || !SHOPIFY_ACCESS_TOKEN) {
+  console.warn("[ecpay] Missing Shopify Admin API credentials.");
+}
+
+const shopifyClient = axios.create({
+  baseURL: `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}`,
+  headers: {
+    "Content-Type": "application/json",
+    "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
+  },
+  timeout: 15000,
+});
 
 const padZero = (num) => String(num).padStart(2, "0");
 
@@ -24,70 +45,208 @@ const formatDate = (date) => {
 };
 
 const encodeParams = (params) => {
-  // 1. 進行 A-Z 排序
-  const sortedKeys = Object.keys(params)
+  const query = Object.keys(params)
     .filter((key) => params[key] !== undefined && params[key] !== "")
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => `${key}=${params[key]}`)
+    .join("&");
 
-  // 2. 針對每個 "值" 進行 URL 編碼並替換特定字元
-  const encodedParams = sortedKeys.map((key) => {
-    const value = params[key];
-    // 使用 encodeURIComponent 編碼值 (空格會被編碼成 %20)
-    let encodedValue = encodeURIComponent(value);
+  const raw = `HashKey=${ECPAY_HASH_KEY}&${query}&HashIV=${ECPAY_HASH_IV}`;
 
-    // 進行綠界要求的特定反向替換 (與 .NET 一致)
-    encodedValue = encodedValue
-      .replace(/%2d/g, "-") // -
-      .replace(/%5f/g, "_") // _
-      .replace(/%2e/g, ".") // .
-      .replace(/%21/g, "!") // !
-      .replace(/%2a/g, "*") // *
-      .replace(/%28/g, "(") // (
-      .replace(/%29/g, ")") // )
-      // 【新增此行】將所有 URL 編碼後的百分號(%)後續的十六進位轉為小寫，以符合綠界要求
-      .replace(/%([0-9A-F]{2})/g, (match, p1) => `%${p1.toLowerCase()}`);
+  const encoded = encodeURIComponent(raw)
+    .toLowerCase()
+    .replace(/%2d/g, "-")
+    .replace(/%5f/g, "_")
+    .replace(/%2e/g, ".")
+    .replace(/%21/g, "!")
+    .replace(/%2a/g, "*")
+    .replace(/%28/g, "(")
+    .replace(/%29/g, ")")
+    .replace(/%20/g, "+");
 
-    return `${key}=${encodedValue}`;
-  });
-
-  // 3. 組合完整的簽章字串
-  const queryString = encodedParams.join("&");
-  const raw = `HashKey=${ECPAY_HASH_KEY}&${queryString}&HashIV=${ECPAY_HASH_IV}`;
-
-  console.log("Raw string for encryption:", raw); // 可選：用於除錯
-
-  // 4. 進行 SHA256 加密並轉大寫
-  return crypto.createHash("sha256").update(raw).digest("hex").toUpperCase();
+  return crypto
+    .createHash("sha256")
+    .update(encoded)
+    .digest("hex")
+    .toUpperCase();
 };
 
-router.post("/checkout", (req, res) => {
-  const { tradeNo, totalAmount, description, returnURL } = req.body;
+const persistPendingOrder = async ({
+  tradeNo,
+  userId,
+  totalAmount,
+  orderPayload,
+}) => {
+  await pool.query(
+    `INSERT INTO ecpay_transactions (
+       merchant_trade_no,
+       user_id,
+       total_amount,
+       order_payload,
+       created_at,
+       updated_at
+     )
+     VALUES ($1,$2,$3,$4,NOW(),NOW())
+     ON CONFLICT (merchant_trade_no)
+     DO UPDATE SET
+       user_id = EXCLUDED.user_id,
+       total_amount = EXCLUDED.total_amount,
+       order_payload = EXCLUDED.order_payload,
+       processed_at = NULL,
+       shopify_order_id = NULL,
+       shopify_order_name = NULL,
+       shopify_order_number = NULL,
+       updated_at = NOW()`,
+    [tradeNo, userId, JSON.stringify(orderPayload), totalAmount]
+  );
+};
 
-  const payload = {
-    MerchantID: ECPAY_MERCHANT_ID,
-    MerchantTradeNo: tradeNo,
-    MerchantTradeDate: formatDate(new Date()),
-    PaymentType: "aio",
-    TotalAmount: String(Math.round(Number(totalAmount) || 0)),
-    TradeDesc: description ?? "PLG order",
-    ItemName: "PLG item",
-    ReturnURL: returnURL ?? "http://localhost:3001/api/ecpay/payment-return",
-    ChoosePayment: "Credit",
-    EncryptType: "1",
+const fetchPendingOrder = async (tradeNo) => {
+  const { rows } = await pool.query(
+    `SELECT merchant_trade_no,
+            total_amount,
+            order_payload,
+            processed_at
+       FROM ecpay_transactions
+      WHERE merchant_trade_no = $1
+      LIMIT 1`,
+    [tradeNo]
+  );
+  return rows[0] ?? null;
+};
+
+const markTransactionProcessed = async (tradeNo, order) => {
+  await pool.query(
+    `UPDATE ecpay_transactions
+        SET processed_at = NOW(),
+            shopify_order_id = $2,
+            shopify_order_name = $3,
+            shopify_order_number = $4,
+            updated_at = NOW()
+      WHERE merchant_trade_no = $1`,
+    [
+      tradeNo,
+      order?.id ?? null,
+      order?.name ?? null,
+      order?.order_number ?? null,
+    ]
+  );
+};
+
+const buildShopifyOrderPayload = (storedOrder = {}, paymentResult = {}) => {
+  const shippingMethod = storedOrder?.shipping?.method ?? "home";
+  const shippingAddress =
+    shippingMethod === "home"
+      ? {
+          first_name: storedOrder.shipping?.address?.receiver ?? "PLG",
+          address1: storedOrder.shipping?.address?.detail ?? "",
+          city: storedOrder.shipping?.address?.city ?? "",
+          province: storedOrder.shipping?.address?.district ?? "",
+          country: "TW",
+        }
+      : {
+          first_name: storedOrder.shipping?.store?.name ?? "CVS",
+          last_name: storedOrder.shipping?.store?.id ?? "",
+          address1: storedOrder.shipping?.store?.address ?? "",
+          phone: storedOrder.shipping?.store?.phone ?? "",
+          city: "便利商店",
+          province: storedOrder.shipping?.store?.logisticsSubType ?? "",
+          country: "TW",
+        };
+
+  const lineItems =
+    storedOrder.items?.map((item) => ({
+      title: item.name ?? `PLG 商品 #${item.productId ?? ""}`,
+      quantity: item.quantity ?? 1,
+      price: Number(item.priceCents ?? 0).toFixed(2),
+      sku: item.productId ? String(item.productId) : undefined,
+      variant_id: item.shopifyVariantId
+        ? Number(item.shopifyVariantId)
+        : undefined,
+    })) ?? [];
+
+  const amount =
+    Number(storedOrder?.totals?.total ?? paymentResult.TotalAmount ?? 0) || 0;
+
+  const baseOrder = {
+    line_items: lineItems.length
+      ? lineItems
+      : [
+          {
+            title: storedOrder.description ?? "PLG order",
+            quantity: 1,
+            price: amount.toFixed(2),
+          },
+        ],
+    currency: "TWD",
+    financial_status: "paid",
+    tags: `plg-ecpay,ship-${shippingMethod}`,
+    shipping_address: shippingAddress,
+    note: `ECPay TradeNo: ${paymentResult.MerchantTradeNo ?? ""}`,
+    note_attributes: [
+      { name: "ecpay_trade_no", value: paymentResult.TradeNo ?? "" },
+      { name: "ecpay_rtn_msg", value: paymentResult.RtnMsg ?? "" },
+    ],
+    transactions: [
+      {
+        kind: "sale",
+        status: "success",
+        amount: amount.toFixed(2),
+        gateway: "ECPay",
+        authorization: paymentResult.TradeNo ?? "",
+        processed_at: new Date().toISOString(),
+      },
+    ],
   };
 
-  console.log("ECPAY payload", payload);
+  return { order: baseOrder };
+};
 
-  const CheckMacValue = encodeParams(payload);
-  console.log("CheckMacValue", CheckMacValue);
+router.post("/checkout", requireAuth, async (req, res, next) => {
+  try {
+    const { tradeNo, totalAmount, description, returnURL, order } = req.body;
 
-  res.json({
-    action: ECPAY_BASE_URL,
-    fields: { ...payload, CheckMacValue },
-  });
+    if (!tradeNo || !totalAmount) {
+      return res.status(400).json({ message: "缺少交易編號或金額" });
+    }
+    if (!order?.items?.length) {
+      return res.status(400).json({ message: "缺少訂單明細" });
+    }
+
+    const total = Math.round(Number(totalAmount) || 0);
+    await persistPendingOrder({
+      tradeNo,
+      userId: req.user.sub,
+      totalAmount: total,
+      orderPayload: order,
+    });
+
+    const payload = {
+      MerchantID: ECPAY_MERCHANT_ID,
+      MerchantTradeNo: tradeNo,
+      MerchantTradeDate: formatDate(new Date()),
+      PaymentType: "aio",
+      TotalAmount: String(total),
+      TradeDesc: description ?? "PLG order",
+      ItemName: "PLG item",
+      ReturnURL:
+        returnURL ?? "https://plg-be.onrender.com/api/ecpay/payment-return",
+      ChoosePayment: "Credit",
+      EncryptType: "1",
+    };
+
+    const CheckMacValue = encodeParams(payload);
+
+    res.json({
+      action: ECPAY_BASE_URL,
+      fields: { ...payload, CheckMacValue },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.post("/payment-return", (req, res) => {
+router.post("/payment-return", async (req, res) => {
   const payload = req.body;
   const receivedCheckMac = payload.CheckMacValue;
   const { CheckMacValue: _, ...others } = payload;
@@ -97,11 +256,36 @@ router.post("/payment-return", (req, res) => {
     return res.status(400).send("0|CheckMacValue Error");
   }
 
-  if (payload.RtnCode === "1") {
-    // TODO: 更新訂單狀態
+  if (payload.RtnCode !== "1") {
+    return res.send("1|OK");
   }
 
-  res.send("1|OK");
+  const pendingOrder = await fetchPendingOrder(payload.MerchantTradeNo);
+  if (!pendingOrder) {
+    console.warn("[ecpay] Pending order not found:", payload.MerchantTradeNo);
+    return res.status(404).send("0|Order Not Found");
+  }
+
+  if (pendingOrder.processed_at) {
+    return res.send("1|OK");
+  }
+
+  try {
+    const shopifyPayload = buildShopifyOrderPayload(
+      pendingOrder.order_payload,
+      payload
+    );
+    const { data } = await shopifyClient.post("/orders.json", shopifyPayload);
+    const shopifyOrder = data?.order;
+    if (!shopifyOrder?.id) {
+      throw new Error("Shopify did not return order id");
+    }
+    await markTransactionProcessed(payload.MerchantTradeNo, shopifyOrder);
+    return res.send("1|OK");
+  } catch (err) {
+    console.error("[ecpay] Shopify order creation failed", err);
+    return res.status(500).send("0|Shopify Order Failed");
+  }
 });
 
 export default router;
