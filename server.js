@@ -9,6 +9,8 @@ import logisticsRouter from "./routes/logistics.js";
 import ordersRouter from "./routes/orders.js";
 import webhookRouter from "./routes/webhook.js";
 import storefrontRouter from "./routes/storefront.js";
+import shopifyProductsRouter from "./routes/shopify_products.js";
+import ecpayRouter from "./routes/ecpay.js";
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.use("/api/auth/google", AuthGoogleRouter);
 app.use("/api/logistics", logisticsRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/storefront", storefrontRouter);
+app.use("/api/shopify/products", shopifyProductsRouter);
+app.use("/api/ecpay", ecpayRouter);
 
 app.get("/", (req, res) => {
   res.send("OK");

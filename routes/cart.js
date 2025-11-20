@@ -10,7 +10,8 @@ async function fetchCartItems(userId) {
             ci.quantity,
             p.name,
             p.price_cents AS "priceCents",
-            p.image_url AS "imageUrl"
+            p.image_url AS "imageUrl",
+            p.shopify_variant_id AS "shopifyVariantId"
        FROM cart_items ci
        JOIN carts c ON c.id = ci.cart_id
        JOIN products p ON p.id = ci.product_id
