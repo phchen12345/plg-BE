@@ -110,6 +110,7 @@ const persistPendingOrder = async ({
 const fetchPendingOrder = async (tradeNo) => {
   const { rows } = await pool.query(
     `SELECT merchant_trade_no,
+            user_id,
             total_amount,
             order_payload,
             processed_at
@@ -206,6 +207,64 @@ const buildShopifyOrderPayload = (storedOrder = {}, paymentResult = {}) => {
   };
 
   return { order: baseOrder };
+};
+
+const mapLineItems = (items = []) =>
+  items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    quantity: item.quantity,
+    price: item.price,
+    sku: item.sku,
+  }));
+
+const saveShopifyOrderRecord = async (userId, order) => {
+  if (!userId || !order?.id) {
+    return;
+  }
+  const lineItemsSnapshot = mapLineItems(order.line_items ?? []);
+  await pool.query(
+    `INSERT INTO shopify_orders (
+       user_id,
+       shopify_order_id,
+       shopify_order_name,
+       shopify_order_number,
+       currency,
+       subtotal_price,
+       total_price,
+       financial_status,
+       fulfillment_status,
+       status_url,
+       line_items
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (shopify_order_id)
+     DO UPDATE SET
+       currency = EXCLUDED.currency,
+       subtotal_price = EXCLUDED.subtotal_price,
+       total_price = EXCLUDED.total_price,
+       financial_status = EXCLUDED.financial_status,
+       fulfillment_status = EXCLUDED.fulfillment_status,
+       status_url = EXCLUDED.status_url,
+       line_items = EXCLUDED.line_items,
+       user_id = EXCLUDED.user_id,
+       shopify_order_name = EXCLUDED.shopify_order_name,
+       shopify_order_number = EXCLUDED.shopify_order_number,
+       updated_at = NOW()`,
+    [
+      userId,
+      order.id,
+      order.name,
+      order.order_number,
+      order.currency,
+      order.subtotal_price,
+      order.total_price,
+      order.financial_status,
+      order.fulfillment_status,
+      order.order_status_url,
+      JSON.stringify(lineItemsSnapshot),
+    ]
+  );
 };
 
 router.post("/checkout", requireAuth, async (req, res, next) => {
@@ -309,6 +368,7 @@ router.post("/payment-return", async (req, res) => {
       throw new Error("Shopify did not return order id");
     }
     await markTransactionProcessed(payload.MerchantTradeNo, shopifyOrder);
+    await saveShopifyOrderRecord(pendingOrder.user_id, shopifyOrder);
     console.log(
       "[payment-return] markTransactionProcessed",
       payload.MerchantTradeNo,
