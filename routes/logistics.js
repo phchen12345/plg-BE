@@ -103,7 +103,7 @@ router.post("/map-token", (req, res, next) => {
       Device: "0",
     };
 
-    const CheckMacValue = sortAndEncode(baseParams);
+    const CheckMacValue = encodeParams(baseParams);
 
     res.json({
       action: ECPAY_MAP_URL,
@@ -140,7 +140,7 @@ router.post("/fami/print-waybill", (req, res) => {
       IsPreview: preview ? "1" : "0",
     };
 
-    const CheckMacValue = sortAndEncode(payload);
+    const CheckMacValue = encodeParams(payload);
 
     res.json({
       action: ECPAY_PRINT_DOC_URL,
