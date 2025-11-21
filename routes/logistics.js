@@ -28,46 +28,27 @@ const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
  * 綠界專用的 URL 編碼函數。
  * 遵循綠界規範：將特殊字元進行 URL 編碼，並將空格 %20 轉為 '+'
  */
-const ecpayUrlEncode = (str) => {
-  if (typeof str !== "string") {
-    str = String(str);
-  }
-  return encodeURIComponent(str)
+const ecpayUrlEncode = (value) =>
+  encodeURIComponent(String(value))
     .replace(/%20/g, "+")
-    .replace(/%2D/g, "-")
-    .replace(/%5F/g, "_")
-    .replace(/%2E/g, ".")
+    .replace(/%2d/g, "-")
+    .replace(/%5f/g, "_")
+    .replace(/%2e/g, ".")
     .replace(/%21/g, "!")
-    .replace(/%2A/g, "*")
+    .replace(/%2a/g, "*")
     .replace(/%28/g, "(")
     .replace(/%29/g, ")");
-};
 
-/**
- * CheckMacValue 計算函式 (SHA256 或 MD5)
- */
 const sortAndEncode = (params, encryptType = "MD5") => {
-  const keys = Object.keys(params).sort((a, b) => a.localeCompare(b));
+  const query = Object.keys(params)
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => `${key}=${params[key] ?? ""}`)
+    .join("&");
 
-  let raw = `HashKey=${HASH_KEY}`;
-
-  keys.forEach((key) => {
-    const value = ecpayUrlEncode(params[key] ?? "");
-    raw += `&${key}=${value}`;
-  });
-
-  raw += `&HashIV=${HASH_IV}`;
-
-  const lowerCaseRaw = raw.toLowerCase();
-
+  const raw = `HashKey=${HASH_KEY}&${query}&HashIV=${HASH_IV}`;
+  const encoded = ecpayUrlEncode(raw).toLowerCase();
   const hashAlgo = encryptType === "SHA256" ? "sha256" : "md5";
-  const CheckMacValue = crypto
-    .createHash(hashAlgo)
-    .update(lowerCaseRaw)
-    .digest("hex")
-    .toUpperCase();
-
-  return CheckMacValue;
+  return crypto.createHash(hashAlgo).update(encoded).digest("hex").toUpperCase();
 };
 
 /**
@@ -378,3 +359,4 @@ router.post(
 );
 
 export default router;
+
