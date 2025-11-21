@@ -24,15 +24,29 @@ const ECPAY_CREATE_SHIPPING_URL =
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
-const sortAndEncode = (params) => {
-  const sorted = Object.keys(params)
+const encodeParams = (params) => {
+  const query = Object.keys(params)
+    .filter((key) => params[key] !== undefined) // 保留 ""
     .sort((a, b) => a.localeCompare(b))
-    .map((key) => `${key}=${params[key] ?? ""}`)
+    .map((key) => `${key}=${params[key]}`)
     .join("&");
-  const raw = `HashKey=${HASH_KEY}&${sorted}&HashIV=${HASH_IV}`;
+
+  const raw = `HashKey=${ECPAY_HASH_KEY}&${query}&HashIV=${ECPAY_HASH_IV}`;
+
+  const encoded = encodeURIComponent(raw)
+    .toLowerCase()
+    .replace(/%2d/g, "-")
+    .replace(/%5f/g, "_")
+    .replace(/%2e/g, ".")
+    .replace(/%21/g, "!")
+    .replace(/%2a/g, "*")
+    .replace(/%28/g, "(")
+    .replace(/%29/g, ")")
+    .replace(/%20/g, "+");
+
   return crypto
     .createHash("sha256")
-    .update(encodeURIComponent(raw).toLowerCase())
+    .update(encoded)
     .digest("hex")
     .toUpperCase();
 };
@@ -174,11 +188,11 @@ router.post("/shipping-order", async (req, res) => {
       ReturnURL:
         req.body?.returnUrl ??
         `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
-      ReceiverEmail: req.body?.receiverEmail ?? "receiverexample.com",
+      ReceiverEmail: req.body?.receiverEmail ?? "receiver@example.com",
       Remark: req.body?.remark ?? "測試物流下單",
     };
 
-    const CheckMacValue = sortAndEncode(basePayload);
+    const CheckMacValue = encodeParams(basePayload);
     const payload = { ...basePayload, CheckMacValue };
     const params = new URLSearchParams(payload);
 
