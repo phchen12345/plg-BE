@@ -24,29 +24,15 @@ const ECPAY_CREATE_SHIPPING_URL =
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
-const encodeParams = (params) => {
-  const query = Object.keys(params)
-    .filter((key) => params[key] !== undefined) // 保留 ""
+const sortAndEncode = (params) => {
+  const sorted = Object.keys(params)
     .sort((a, b) => a.localeCompare(b))
-    .map((key) => `${key}=${params[key]}`)
+    .map((key) => `${key}=${params[key] ?? ""}`)
     .join("&");
-
-  const raw = `HashKey=${ECPAY_HASH_KEY}&${query}&HashIV=${ECPAY_HASH_IV}`;
-
-  const encoded = encodeURIComponent(raw)
-    .toLowerCase()
-    .replace(/%2d/g, "-")
-    .replace(/%5f/g, "_")
-    .replace(/%2e/g, ".")
-    .replace(/%21/g, "!")
-    .replace(/%2a/g, "*")
-    .replace(/%28/g, "(")
-    .replace(/%29/g, ")")
-    .replace(/%20/g, "+");
-
+  const raw = `HashKey=${HASH_KEY}&${sorted}&HashIV=${HASH_IV}`;
   return crypto
     .createHash("sha256")
-    .update(encoded)
+    .update(encodeURIComponent(raw).toLowerCase())
     .digest("hex")
     .toUpperCase();
 };
@@ -103,7 +89,7 @@ router.post("/map-token", (req, res, next) => {
       Device: "0",
     };
 
-    const CheckMacValue = encodeParams(baseParams);
+    const CheckMacValue = sortAndEncode(baseParams);
 
     res.json({
       action: ECPAY_MAP_URL,
@@ -140,7 +126,7 @@ router.post("/fami/print-waybill", (req, res) => {
       IsPreview: preview ? "1" : "0",
     };
 
-    const CheckMacValue = encodeParams(payload);
+    const CheckMacValue = sortAndEncode(payload);
 
     res.json({
       action: ECPAY_PRINT_DOC_URL,
@@ -192,7 +178,7 @@ router.post("/shipping-order", async (req, res) => {
       Remark: req.body?.remark ?? "測試物流下單",
     };
 
-    const CheckMacValue = encodeParams(basePayload);
+    const CheckMacValue = sortAndEncode(basePayload);
     const payload = { ...basePayload, CheckMacValue };
     const params = new URLSearchParams(payload);
 
