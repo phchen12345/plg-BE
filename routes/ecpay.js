@@ -9,9 +9,9 @@ import { channel } from "diagnostics_channel";
 const router = Router();
 router.use(express.urlencoded({ extended: false }));
 
-const ECPAY_MERCHANT_ID = process.env.ECPAY_MERCHANT_ID ?? "2000132";
-const ECPAY_HASH_KEY = process.env.ECPAY_HASH_KEY ?? "5294y06JbISpM5x9";
-const ECPAY_HASH_IV = process.env.ECPAY_HASH_IV ?? "v77hoKGq4kWxNNIS";
+const ECPAY_MERCHANT_ID = "2000132";
+const ECPAY_HASH_KEY = "5294y06JbISpM5x9";
+const ECPAY_HASH_IV = "v77hoKGq4kWxNNIS";
 const ECPAY_BASE_URL =
   process.env.ECPAY_PAYMENT_URL ??
   "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5";
