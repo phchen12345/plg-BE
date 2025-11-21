@@ -236,7 +236,7 @@ router.post("/shipping-order", async (req, res) => {
       SenderPhone: req.body?.senderLandline || "",
       SenderCellPhone: senderCellPhone,
       ReceiverName: receiverName || "PLG收件者",
-      ReceiverPhone: req.body?.receiverLandline || "",
+      ReceiverPhone: receiverPhone,
       ReceiverStoreID: receiverStoreId,
       ServerReplyURL:
         req.body?.serverReplyUrl ??
