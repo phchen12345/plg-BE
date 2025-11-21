@@ -19,6 +19,10 @@ const ECPAY_BASE_URL =
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? "2024-04";
+const SERVER_BASE_URL =
+  process.env.SERVER_BASE_URL ??
+  process.env.BASE_URL ??
+  "http://localhost:3001";
 
 if (!SHOPIFY_STORE_DOMAIN || !SHOPIFY_ACCESS_TOKEN) {
   console.warn("[ecpay] Missing Shopify Admin API credentials.");
@@ -30,6 +34,11 @@ const shopifyClient = axios.create({
     "Content-Type": "application/json",
     "X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
   },
+  timeout: 15000,
+});
+
+const internalClient = axios.create({
+  baseURL: SERVER_BASE_URL,
   timeout: 15000,
 });
 
@@ -78,11 +87,6 @@ const persistPendingOrder = async ({
   totalAmount,
   orderPayload,
 }) => {
-  console.log("[ecpay] persistPendingOrder", {
-    tradeNo,
-    userId,
-    totalAmount,
-  });
   await pool.query(
     `INSERT INTO ecpay_transactions (
        merchant_trade_no,
@@ -267,16 +271,80 @@ const saveShopifyOrderRecord = async (userId, order) => {
   );
 };
 
+const saveLogisticsInfo = async (
+  merchantTradeNo,
+  logisticsId,
+  logisticsSubType
+) => {
+  if (!merchantTradeNo || !logisticsId) {
+    return;
+  }
+  await pool.query(
+    `UPDATE ecpay_transactions
+        SET allpay_logistics_id = $1,
+            logistics_subtype = $2,
+            updated_at = NOW()
+      WHERE merchant_trade_no = $3`,
+    [logisticsId, logisticsSubType ?? "", merchantTradeNo]
+  );
+};
+
+const LOGISTICS_SUBTYPE_MAP = {
+  seveneleven: "UNIMARTC2C",
+  familymart: "FAMIC2C",
+};
+
+const createLogisticsOrder = async (tradeNo, pendingOrder) => {
+  const shipping = pendingOrder.order_payload?.shipping;
+  if (!shipping || shipping.method === "home" || !shipping.store?.id) {
+    return null;
+  }
+
+  const subtype =
+    LOGISTICS_SUBTYPE_MAP[shipping.method] ?? shipping.store?.logisticsSubType;
+
+  if (!subtype) {
+    return null;
+  }
+
+  const firstItem = pendingOrder.order_payload?.items?.[0];
+  const goodsName = firstItem?.name ?? "PLG 商品";
+
+  const payload = {
+    merchantTradeNo: tradeNo,
+    logisticsSubType: subtype,
+    goodsAmount: pendingOrder.total_amount ?? 100,
+    goodsName,
+    receiverName: shipping.store?.name ?? "CVS Receiver",
+    receiverPhone: shipping.store?.phone ?? "0911222333",
+    receiverStoreId: shipping.store?.id,
+  };
+
+  try {
+    const { data } = await internalClient.post(
+      "/api/logistics/shipping-order",
+      payload
+    );
+
+    let responseData = data?.response;
+    if (typeof responseData === "string") {
+      try {
+        responseData = JSON.parse(responseData);
+      } catch (_err) {
+        responseData = null;
+      }
+    }
+
+    return responseData;
+  } catch (err) {
+    console.error("[logistics] shipping-order failed", err);
+    return null;
+  }
+};
+
 router.post("/checkout", requireAuth, async (req, res, next) => {
   try {
     const { tradeNo, totalAmount, description, returnURL, order } = req.body;
-    console.log("[ecpay] /checkout request", {
-      tradeNo,
-      totalAmount,
-      description,
-      hasOrder: !!order,
-      orderItemCount: order?.items?.length ?? 0,
-    });
 
     if (!tradeNo || !totalAmount) {
       return res.status(400).json({ message: "缺少交易編號或金額" });
@@ -308,8 +376,6 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
     };
 
     const CheckMacValue = encodeParams(payload);
-    console.log("[ecpay] payload sent to ECPay:", payload);
-    console.log("[ecpay] calculated CheckMacValue:", CheckMacValue);
 
     res.json({
       action: ECPAY_BASE_URL,
@@ -322,14 +388,10 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
 
 router.post("/payment-return", async (req, res) => {
   const payload = req.body;
-  console.log("[payment-return] payload", payload);
+
   const receivedCheckMac = payload.CheckMacValue;
   const { CheckMacValue: _, ...others } = payload;
   const calculated = encodeParams(others);
-  console.log("[payment-return] checkmac compare", {
-    received: receivedCheckMac,
-    calculated,
-  });
 
   if (receivedCheckMac !== calculated) {
     console.warn("[payment-return] CheckMac mismatch", payload.MerchantTradeNo);
@@ -343,15 +405,10 @@ router.post("/payment-return", async (req, res) => {
 
   const pendingOrder = await fetchPendingOrder(payload.MerchantTradeNo);
   if (!pendingOrder) {
-    console.warn("[ecpay] Pending order not found:", payload.MerchantTradeNo);
     return res.status(404).send("0|Order Not Found");
   }
 
   if (pendingOrder.processed_at) {
-    console.log(
-      "[payment-return] order already processed",
-      payload.MerchantTradeNo
-    );
     return res.send("1|OK");
   }
 
@@ -360,20 +417,26 @@ router.post("/payment-return", async (req, res) => {
       pendingOrder.order_payload,
       payload
     );
-    console.log("[payment-return] posting to Shopify", shopifyPayload);
+
     const { data } = await shopifyClient.post("/orders.json", shopifyPayload);
     const shopifyOrder = data?.order;
-    console.log("[payment-return] Shopify response", data);
+
     if (!shopifyOrder?.id) {
       throw new Error("Shopify did not return order id");
     }
     await markTransactionProcessed(payload.MerchantTradeNo, shopifyOrder);
     await saveShopifyOrderRecord(pendingOrder.user_id, shopifyOrder);
-    console.log(
-      "[payment-return] markTransactionProcessed",
+    const logisticsResult = await createLogisticsOrder(
       payload.MerchantTradeNo,
-      shopifyOrder.id
+      pendingOrder
     );
+    if (logisticsResult?.AllPayLogisticsID) {
+      await saveLogisticsInfo(
+        payload.MerchantTradeNo,
+        logisticsResult.AllPayLogisticsID,
+        logisticsResult.LogisticsSubType
+      );
+    }
     return res.send("1|OK");
   } catch (err) {
     console.error(
