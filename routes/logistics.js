@@ -222,7 +222,7 @@ router.post("/shipping-order", async (req, res) => {
     }
 
     // 驗證手機號碼格式 (台灣手機號碼: 09 開頭，共 10 碼)
-    const senderCellPhone = senderPhone || "0911111111";
+    const senderCellPhone = "0911111111";
 
     const finalMerchantTradeNo = merchantTradeNo ?? `EC${Date.now()}`;
 
@@ -238,10 +238,12 @@ router.post("/shipping-order", async (req, res) => {
       GoodsName: goodsName,
       SenderName: senderName || "PLG寄件者",
       SenderPhone: req.body?.senderLandline || "",
-      SenderCellPhone: senderCellPhone,
+      SenderCellPhone: "0911111111",
       ReceiverName: receiverName || "PLG收件者",
       ReceiverPhone: receiverPhone,
-      ReceiverCellPhone: receiverCellPhone || "0911111111",
+      ReceiverZipCode: req.body?.receiverZip || "",
+      ReceiverAddress: req.body?.receiverAddress || "",
+      ReceiverCellPhone: "0911111111",
       ReceiverStoreID: receiverStoreId,
       ServerReplyURL:
         req.body?.serverReplyUrl ??
@@ -285,7 +287,7 @@ router.post("/shipping-order", async (req, res) => {
       }
     );
 
-    console.log("[logistics] 綠界回應:", data);
+    console.log("[logistics] 綠界回應CheckMacValue:", data.CheckMacValue);
 
     // 綠界可能回傳 JSON 格式 (1|OK) 或 HTML 錯誤頁面
     if (typeof data === "string") {

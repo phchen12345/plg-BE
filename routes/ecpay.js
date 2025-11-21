@@ -325,7 +325,6 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
       "/api/logistics/shipping-order",
       payload
     );
-    console.log("[logistics] shipping-order response成功回應", data);
 
     let responseData = data?.response;
     if (typeof responseData === "string") {
