@@ -46,7 +46,7 @@ const ecpayUrlEncode = (str) => {
 /**
  * CheckMacValue 計算函式 (SHA256 或 MD5)
  */
-const sortAndEncode = (params, encryptType = "SHA256") => {
+const sortAndEncode = (params, encryptType = "MD5") => {
   const keys = Object.keys(params).sort((a, b) => a.localeCompare(b));
 
   let raw = `HashKey=${HASH_KEY}`;
@@ -257,8 +257,6 @@ router.post("/shipping-order", async (req, res) => {
       logisticsSubType === "HILIFEC2C"
     ) {
       // C2C 類型需要寄件人地址
-      basePayload.SenderZipCode = req.body?.senderZip || "";
-      basePayload.SenderAddress = req.body?.senderAddress || "";
       basePayload.ReturnStoreID = req.body?.returnStoreId || receiverStoreId;
     }
 
@@ -287,7 +285,7 @@ router.post("/shipping-order", async (req, res) => {
       }
     );
 
-    console.log("[logistics] 綠界回應CheckMacValue:", data.CheckMacValue);
+    console.log("[logistics] 綠界回應CheckMacValue:", data);
 
     // 綠界可能回傳 JSON 格式 (1|OK) 或 HTML 錯誤頁面
     if (typeof data === "string") {
