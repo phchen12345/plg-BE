@@ -218,21 +218,7 @@ router.post("/shipping-order", async (req, res) => {
     }
 
     // 驗證手機號碼格式 (台灣手機號碼: 09 開頭，共 10 碼)
-    const phoneRegex = /^09\d{8}$/;
     const senderCellPhone = senderPhone || "0911111111";
-    const receiverCellPhone = receiverPhone || "0922222222";
-
-    if (!phoneRegex.test(senderCellPhone)) {
-      return res.status(400).json({
-        message: `寄件人手機號碼格式錯誤：${senderCellPhone}，應為 09 開頭的 10 碼數字`,
-      });
-    }
-
-    if (!phoneRegex.test(receiverCellPhone)) {
-      return res.status(400).json({
-        message: `收件人手機號碼格式錯誤：${receiverCellPhone}，應為 09 開頭的 10 碼數字`,
-      });
-    }
 
     const finalMerchantTradeNo = merchantTradeNo ?? `EC${Date.now()}`;
 
@@ -251,12 +237,13 @@ router.post("/shipping-order", async (req, res) => {
       SenderCellPhone: senderCellPhone,
       ReceiverName: receiverName || "PLG收件者",
       ReceiverPhone: req.body?.receiverLandline || "",
-      ReceiverCellPhone: receiverCellPhone,
       ReceiverStoreID: receiverStoreId,
       ServerReplyURL:
         req.body?.serverReplyUrl ??
         `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
     };
+
+    console.log("[logistics] 建立物流訂單基本參數:", basePayload);
 
     // 根據物流子類型添加必要欄位
     if (
