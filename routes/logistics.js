@@ -119,7 +119,8 @@ router.post(
 
 router.post("/map-token", (req, res, next) => {
   try {
-    const logisticsSubType = req.body?.logisticsSubType || "FAMI";
+    // 【修正 1-1】：將預設值從 B2C 的 "FAMI" 改為 C2C 的 "FAMIC2C"
+    const logisticsSubType = req.body?.logisticsSubType || "FAMIC2C";
     const extraData = req.body?.extraData || "";
 
     if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
@@ -136,7 +137,8 @@ router.post("/map-token", (req, res, next) => {
       Device: "0",
     };
 
-    const CheckMacValue = sortAndEncode(baseParams);
+    // 【修正 1-2】：C2C 服務必須使用 MD5 雜湊
+    const CheckMacValue = sortAndEncode(baseParams, "MD5");
 
     res.json({
       action: ECPAY_MAP_URL,
@@ -173,7 +175,8 @@ router.post("/fami/print-waybill", (req, res) => {
       IsPreview: preview ? "1" : "0",
     };
 
-    const CheckMacValue = sortAndEncode(payload);
+    // 【修正 2】：C2C 服務必須使用 MD5 雜湊
+    const CheckMacValue = sortAndEncode(payload, "MD5");
 
     res.json({
       action: ECPAY_PRINT_DOC_URL,
@@ -261,7 +264,8 @@ router.post("/shipping-order", async (req, res) => {
 
     console.log("[logistics] 建立物流訂單參數:", basePayload);
 
-    const CheckMacValue = sortAndEncode(basePayload);
+    // 【修正 3】：C2C 服務必須使用 MD5 雜湊
+    const CheckMacValue = sortAndEncode(basePayload, "MD5");
     const payload = { ...basePayload, CheckMacValue };
 
     // 使用 application/x-www-form-urlencoded 格式
@@ -361,7 +365,8 @@ router.post(
       const params = { ...req.body };
       delete params.CheckMacValue;
 
-      const calculatedMac = sortAndEncode(params);
+      // 【修正 4】：C2C 服務必須使用 MD5 雜湊
+      const calculatedMac = sortAndEncode(params, "MD5");
 
       if (calculatedMac !== receivedMac) {
         console.error("[logistics] CheckMacValue 驗證失敗");
