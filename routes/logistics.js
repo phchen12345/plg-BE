@@ -240,9 +240,6 @@ router.post("/shipping-order", async (req, res) => {
       SenderPhone: req.body?.senderLandline || "",
       SenderCellPhone: "0911111111",
       ReceiverName: receiverName || "PLG收件者",
-      ReceiverPhone: receiverPhone,
-      ReceiverZipCode: req.body?.receiverZip || "",
-      ReceiverAddress: req.body?.receiverAddress || "",
       ReceiverCellPhone: "0911111111",
       ReceiverStoreID: receiverStoreId,
       ServerReplyURL:
