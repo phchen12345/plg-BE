@@ -201,6 +201,7 @@ router.post("/shipping-order", async (req, res) => {
       senderPhone,
       receiverName,
       receiverPhone,
+      receiverCellPhone,
       receiverStoreId,
     } = req.body;
 
