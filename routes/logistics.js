@@ -24,7 +24,10 @@ const ECPAY_CREATE_SHIPPING_URL =
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
-// 綠界專用的 URL 編碼函數：將空格 %20 轉為 '+'
+/**
+ * 綠界專用的 URL 編碼函數。
+ * 遵循綠界規範：將特殊字元進行 URL 編碼，並將空格 %20 轉為 '+'
+ */
 const ecpayUrlEncode = (str) => {
   if (typeof str !== "string") {
     str = String(str);
@@ -44,7 +47,9 @@ const ecpayUrlEncode = (str) => {
   );
 };
 
-// 修正後的 CheckMacValue 計算函式 (MD5 + 正確編碼流程)
+/**
+ * 修正後的 CheckMacValue 計算函式 (MD5 + 正確編碼流程)
+ */
 const sortAndEncode = (params) => {
   // 1. 取得參數鍵並按照 A-Z 排序
   const keys = Object.keys(params).sort((a, b) => a.localeCompare(b));
@@ -63,7 +68,7 @@ const sortAndEncode = (params) => {
   // 3. 轉換為小寫
   const lowerCaseRaw = raw.toLowerCase();
 
-  // 4. 進行 MD5 雜湊 (關鍵修正)
+  // 4. 進行 MD5 雜湊 (關鍵修正: 使用 MD5)
   const CheckMacValue = crypto
     .createHash("md5")
     .update(lowerCaseRaw)
@@ -106,8 +111,6 @@ router.post(
   }
 );
 
-// 注意：/map-token 和 /fami/print-waybill 現在也使用修正後的 sortAndEncode
-// 雖然舊的在這些介面可能可行，但為了統一和未來穩定性，也應使用 MD5 規範
 router.post("/map-token", (req, res, next) => {
   try {
     const logisticsSubType = req.body?.logisticsSubType || "FAMI";
@@ -182,18 +185,22 @@ router.post("/shipping-order", async (req, res) => {
       return res.status(500).json({ message: "ECPay 變數未設定" });
     }
 
+    // 綠界建議特店交易編號唯一
     const merchantTradeNo =
       req.body?.merchantTradeNo ?? `EC${Date.now().toString().slice(-10)}`;
 
     const basePayload = {
       MerchantID: MERCHANT_ID,
       MerchantTradeNo: merchantTradeNo,
+      // 確保日期時間格式正確：YYYY/MM/DD hh:mm:ss
       MerchantTradeDate: new Date()
         .toISOString()
         .slice(0, 19)
-        .replace("T", " "),
+        .replace("T", " ")
+        .replace(/-/g, "/"), // 修正日期分隔符
       LogisticsType: "CVS",
       LogisticsSubType: req.body?.logisticsSubType ?? "FAMIC2C",
+      // GoodsAmount 必須是字串型別的整數
       GoodsAmount: String(req.body?.goodsAmount ?? 100),
       CollectionAmount: "0",
       GoodsName: req.body?.goodsName ?? "PLG 測試商品",
@@ -203,6 +210,7 @@ router.post("/shipping-order", async (req, res) => {
       SenderAddress: req.body?.senderAddress ?? "台北市中正區忠孝西路一段",
       ReceiverName: req.body?.receiverName ?? "PLGReceiver",
       ReceiverCellPhone: req.body?.receiverPhone ?? "0922333444",
+      // 確保 ReceiverStoreID 是從地圖介面取得的有效店鋪代碼
       ReceiverStoreID: req.body?.receiverStoreId ?? "F001234",
       GoodsPayment: "Cash",
       IsCollection: "N",
@@ -220,6 +228,9 @@ router.post("/shipping-order", async (req, res) => {
     const payload = { ...basePayload, CheckMacValue };
     const params = new URLSearchParams(payload);
 
+    // 修正: 檢查 MerchantTradeDate 格式是否符合 YYYY/MM/DD hh:mm:ss
+    // 備註：在 basePayload 中加入了 .replace(/-/g, "/") 修正。
+
     const { data } = await axios.post(ECPAY_CREATE_SHIPPING_URL, params, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
@@ -228,9 +239,14 @@ router.post("/shipping-order", async (req, res) => {
   } catch (err) {
     console.error("[logistics] create shipping order failed", err);
     if (axios.isAxiosError(err)) {
-      return res
-        .status(err.response?.status ?? 500)
-        .json({ message: err.response?.data ?? err.message });
+      // 修正後，這裡應該會收到綠界 API 回傳的 JSON 錯誤，而不是 HTML 500
+      return res.status(err.response?.status ?? 500).json({
+        message:
+          err.response?.data?.RtnMsg ||
+          err.response?.data?.message ||
+          err.message,
+        fullResponse: err.response?.data, // 顯示綠界回傳的完整訊息
+      });
     }
     res.status(500).json({ message: "建立物流訂單失敗" });
   }
