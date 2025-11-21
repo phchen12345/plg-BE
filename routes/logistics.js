@@ -248,8 +248,6 @@ router.post("/shipping-order", async (req, res) => {
         `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
     };
 
-    console.log("[logistics] 建立物流訂單基本參數:", basePayload);
-
     // 根據物流子類型添加必要欄位
     if (
       logisticsSubType === "FAMIC2C" ||
@@ -262,11 +260,11 @@ router.post("/shipping-order", async (req, res) => {
       basePayload.ReturnStoreID = req.body?.returnStoreId || receiverStoreId;
     }
 
-    console.log("[logistics] 建立物流訂單參數:", basePayload);
-
     // 【修正 3】：C2C 服務必須使用 MD5 雜湊
     const CheckMacValue = sortAndEncode(basePayload, "MD5");
     const payload = { ...basePayload, CheckMacValue };
+
+    console.log("[logistics] 建立物流訂單請求參數:", payload);
 
     // 使用 application/x-www-form-urlencoded 格式
     const formData = new URLSearchParams();
