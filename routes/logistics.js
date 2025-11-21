@@ -24,17 +24,53 @@ const ECPAY_CREATE_SHIPPING_URL =
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
+// 綠界專用的 URL 編碼函數：將空格 %20 轉為 '+'
+const ecpayUrlEncode = (str) => {
+  if (typeof str !== "string") {
+    str = String(str);
+  }
+  return (
+    encodeURIComponent(str)
+      // 綠界要求將空格 %20 替換成 +
+      .replace(/%20/g, "+")
+      // 確保這些字元不被編碼或被正確解碼 (綠界允許不編碼的字元)
+      .replace(/%2D/g, "-")
+      .replace(/%5F/g, "_")
+      .replace(/%2E/g, ".")
+      .replace(/%21/g, "!")
+      .replace(/%2A/g, "*")
+      .replace(/%28/g, "(")
+      .replace(/%29/g, ")")
+  );
+};
+
+// 修正後的 CheckMacValue 計算函式 (MD5 + 正確編碼流程)
 const sortAndEncode = (params) => {
-  const sorted = Object.keys(params)
-    .sort((a, b) => a.localeCompare(b))
-    .map((key) => `${key}=${params[key] ?? ""}`)
-    .join("&");
-  const raw = `HashKey=${HASH_KEY}&${sorted}&HashIV=${HASH_IV}`;
-  return crypto
-    .createHash("sha256")
-    .update(encodeURIComponent(raw).toLowerCase())
+  // 1. 取得參數鍵並按照 A-Z 排序
+  const keys = Object.keys(params).sort((a, b) => a.localeCompare(b));
+
+  // 2. 拼接字串：HashKey + 參數 (A-Z 排序，值需編碼) + HashIV
+  let raw = `HashKey=${HASH_KEY}`;
+
+  keys.forEach((key) => {
+    // 針對單一參數的值進行綠界專用 URL 編碼
+    const value = ecpayUrlEncode(params[key] ?? "");
+    raw += `&${key}=${value}`;
+  });
+
+  raw += `&HashIV=${HASH_IV}`;
+
+  // 3. 轉換為小寫
+  const lowerCaseRaw = raw.toLowerCase();
+
+  // 4. 進行 MD5 雜湊 (關鍵修正)
+  const CheckMacValue = crypto
+    .createHash("md5")
+    .update(lowerCaseRaw)
     .digest("hex")
-    .toUpperCase();
+    .toUpperCase(); // 5. 轉換為大寫
+
+  return CheckMacValue;
 };
 
 router.post(
@@ -70,6 +106,8 @@ router.post(
   }
 );
 
+// 注意：/map-token 和 /fami/print-waybill 現在也使用修正後的 sortAndEncode
+// 雖然舊的在這些介面可能可行，但為了統一和未來穩定性，也應使用 MD5 規範
 router.post("/map-token", (req, res, next) => {
   try {
     const logisticsSubType = req.body?.logisticsSubType || "FAMI";
