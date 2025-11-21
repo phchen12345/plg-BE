@@ -102,8 +102,11 @@ router.post("/map-token", (req, res, next) => {
 
 router.post("/fami/print-waybill", (req, res) => {
   try {
-    const { logisticsId = "", merchantTradeNo = "", preview = false } =
-      req.body ?? {};
+    const {
+      logisticsId = "",
+      merchantTradeNo = "",
+      preview = false,
+    } = req.body ?? {};
 
     if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
       return res.status(500).json({ message: "ECPay 變數未設定" });
@@ -147,17 +150,20 @@ router.post("/shipping-order", async (req, res) => {
     const basePayload = {
       MerchantID: MERCHANT_ID,
       MerchantTradeNo: merchantTradeNo,
-      MerchantTradeDate: new Date().toISOString().slice(0, 19).replace("T", " "),
+      MerchantTradeDate: new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " "),
       LogisticsType: "CVS",
       LogisticsSubType: req.body?.logisticsSubType ?? "FAMIC2C",
       GoodsAmount: String(req.body?.goodsAmount ?? 100),
       CollectionAmount: "0",
       GoodsName: req.body?.goodsName ?? "PLG 測試商品",
-      SenderName: req.body?.senderName ?? "PLG Sender",
+      SenderName: req.body?.senderName ?? "PLGSender",
       SenderCellPhone: req.body?.senderPhone ?? "0911222333",
       SenderZipCode: req.body?.senderZip ?? "100",
       SenderAddress: req.body?.senderAddress ?? "台北市中正區忠孝西路一段",
-      ReceiverName: req.body?.receiverName ?? "PLG Receiver",
+      ReceiverName: req.body?.receiverName ?? "PLGReceiver",
       ReceiverCellPhone: req.body?.receiverPhone ?? "0922333444",
       ReceiverStoreID: req.body?.receiverStoreId ?? "F001234",
       GoodsPayment: "Cash",
@@ -168,7 +174,7 @@ router.post("/shipping-order", async (req, res) => {
       ReturnURL:
         req.body?.returnUrl ??
         `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
-      ReceiverEmail: req.body?.receiverEmail ?? "receiver@example.com",
+      ReceiverEmail: req.body?.receiverEmail ?? "receiverexample.com",
       Remark: req.body?.remark ?? "測試物流下單",
     };
 

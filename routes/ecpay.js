@@ -325,7 +325,7 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
       "/api/logistics/shipping-order",
       payload
     );
-    console.log("[logistics] shipping-order response", data);
+    console.log("[logistics] shipping-order response成功回應", data);
 
     let responseData = data?.response;
     if (typeof responseData === "string") {
@@ -338,7 +338,7 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
 
     return responseData;
   } catch (err) {
-    console.error("[logistics] shipping-order failed", err);
+    console.error("[logistics] shipping-order failed失敗", err);
     return null;
   }
 };
