@@ -14,13 +14,16 @@ const SERVER_BASE_URL =
 const CLIENT_BASE_URL = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
 
 const ECPAY_MAP_URL = "https://logistics-stage.ecpay.com.tw/Express/map";
+const ECPAY_PRINT_DOC_URL =
+  process.env.ECPAY_PRINT_DOC_URL ??
+  "https://logistics-stage.ecpay.com.tw/Express/PrintFAMIC2COrderInfo";
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
 const sortAndEncode = (params) => {
   const sorted = Object.keys(params)
     .sort((a, b) => a.localeCompare(b))
-    .map((key) => `${key}=${params[key]}`)
+    .map((key) => `${key}=${params[key] ?? ""}`)
     .join("&");
   const raw = `HashKey=${HASH_KEY}&${sorted}&HashIV=${HASH_IV}`;
   return crypto
@@ -90,6 +93,52 @@ router.post("/map-token", (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * POST /api/logistics/fami/print-waybill
+ * body: {
+ *   logisticsId?: string;        // 綠界回傳的 AllPayLogisticsID
+ *   merchantTradeNo?: string;    // 你在建立物流訂單時的商店訂單編號
+ *   preview?: boolean;           // 是否預覽模式
+ * }
+ */
+router.post("/fami/print-waybill", (req, res) => {
+  try {
+    const {
+      logisticsId = "",
+      merchantTradeNo = "",
+      preview = false,
+    } = req.body ?? {};
+
+    if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
+      return res.status(500).json({ message: "ECPay 環境變數未設定" });
+    }
+    if (!logisticsId && !merchantTradeNo) {
+      return res.status(400).json({
+        message: "請至少提供 AllPayLogisticsID 或 MerchantTradeNo",
+      });
+    }
+
+    const payload = {
+      MerchantID: MERCHANT_ID,
+      AllPayLogisticsID: logisticsId,
+      MerchantTradeNo: merchantTradeNo,
+      LogisticsType: "CVS",
+      LogisticsSubType: "FAMIC2C", // 全家店到店
+      IsPreview: preview ? "1" : "0",
+    };
+
+    const CheckMacValue = sortAndEncode(payload);
+
+    res.json({
+      action: ECPAY_PRINT_DOC_URL,
+      fields: { ...payload, CheckMacValue },
+    });
+  } catch (err) {
+    console.error("[logistics] fami print error", err);
+    res.status(500).json({ message: "建立託運單列印資料失敗" });
   }
 });
 
