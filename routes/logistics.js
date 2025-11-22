@@ -162,10 +162,12 @@ router.post("/fami/print-waybill", async (req, res) => {
         .status(400)
         .json({ message: "請至少提供 AllPayLogisticsID 或 MerchantTradeNo" });
     }
+    CVSPaymentNo = "15000464245";
 
     const payload = {
       MerchantID: MERCHANT_ID,
       AllPayLogisticsID: logisticsId,
+      CVSPaymentNo: CVSPaymentNo,
       MerchantTradeNo: merchantTradeNo,
       LogisticsType: "CVS",
       LogisticsSubType: "FAMIC2C",
