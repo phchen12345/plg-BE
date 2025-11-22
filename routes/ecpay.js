@@ -388,6 +388,7 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
       ItemName: "PLG item",
       ReturnURL:
         returnURL ?? "https://plg-be.onrender.com/api/ecpay/payment-return",
+      ClientBackURL: "https://plg-test.vercel.app/orders",
       ChoosePayment: "Credit",
       EncryptType: "1",
     };
