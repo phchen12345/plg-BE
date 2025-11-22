@@ -48,7 +48,11 @@ const sortAndEncode = (params, encryptType = "MD5") => {
   const raw = `HashKey=${HASH_KEY}&${query}&HashIV=${HASH_IV}`;
   const encoded = ecpayUrlEncode(raw).toLowerCase();
   const hashAlgo = encryptType === "SHA256" ? "sha256" : "md5";
-  return crypto.createHash(hashAlgo).update(encoded).digest("hex").toUpperCase();
+  return crypto
+    .createHash(hashAlgo)
+    .update(encoded)
+    .digest("hex")
+    .toUpperCase();
 };
 
 /**
@@ -130,13 +134,24 @@ router.post("/map-token", (req, res, next) => {
   }
 });
 
-router.post("/fami/print-waybill", (req, res) => {
+router.post("/fami/print-waybill", async (req, res) => {
   try {
-    const {
-      logisticsId = "",
-      merchantTradeNo = "",
-      preview = false,
-    } = req.body ?? {};
+    const merchantTradeNo = req.body?.merchantTradeNo ?? "";
+    let { logisticsId = "", preview = false } = req.body ?? {};
+
+    if (!logisticsId && merchantTradeNo) {
+      const { rows } = await pool.query(
+        `SELECT allpay_logistics_id, logistics_subtype
+           FROM ecpay_transactions
+          WHERE merchant_trade_no = $1
+          LIMIT 1`,
+        [merchantTradeNo]
+      );
+      logisticsId = rows[0]?.allpay_logistics_id ?? "";
+      if (!req.body?.logisticsSubType) {
+        req.body.logisticsSubType = rows[0]?.logistics_subtype ?? "";
+      }
+    }
 
     if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
       return res.status(500).json({ message: "ECPay 變數未設定" });
@@ -359,4 +374,3 @@ router.post(
 );
 
 export default router;
-
