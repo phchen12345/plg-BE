@@ -131,7 +131,8 @@ router.post("/selection", async (req, res) => {
       Remark: req.body?.remark ?? "",
       ServerReplyURL: req.body?.serverReplyUrl ?? DEFAULT_CALLBACK_URL,
       ClientReplyURL:
-        req.body?.clientReplyUrl ?? `${CLIENT_BASE_URL}/payment/store-callback`,
+        req.body?.clientReplyUrl ??
+        `${CLIENT_BASE_URL}/api/logistics/client-callback`,
       Temperature: req.body?.temperature ?? "0001",
       Specification: req.body?.specification ?? "0001",
       ScheduledPickupTime: req.body?.scheduledPickupTime ?? "4",
