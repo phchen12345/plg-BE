@@ -20,7 +20,8 @@ function verifyShopifyHmac(rawBody, hmacHeader) {
 }
 
 router.post("/shopify", async (req, res) => {
-  console.log("webhook hit:", req.get("X-Shopify-Topic"));
+  const topic = req.get("X-Shopify-Topic") ?? "";
+  console.log("webhook hit:", topic);
   console.log("is buffer", Buffer.isBuffer(req.body), req.get("content-type"));
   const hmac = req.get("X-Shopify-Hmac-Sha256");
   if (!verifyShopifyHmac(req.body, hmac)) {
@@ -28,9 +29,17 @@ router.post("/shopify", async (req, res) => {
   }
 
   const payload = JSON.parse(req.body.toString("utf8"));
-  console.log("incoming webhook", payload.id, req.get("X-Shopify-Topic"));
+  console.log("incoming webhook", payload.id, topic);
   const shopifyOrderId = payload.id;
   if (!shopifyOrderId) return res.status(400).send("Missing order id");
+
+  if (topic === "orders/delete") {
+    await pool.query(
+      `DELETE FROM shopify_orders WHERE shopify_order_id = $1`,
+      [shopifyOrderId]
+    );
+    return res.status(200).send("ok");
+  }
 
   await pool.query(
     `UPDATE shopify_orders
