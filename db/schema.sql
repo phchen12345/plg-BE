@@ -1,5 +1,3 @@
-UPDATE ecpay_transactions
-SET allpay_logistics_id = 'your-logistics-id',
-    logistics_subtype = 'FAMIC2C',
-    updated_at = NOW()
-WHERE merchant_trade_no = 'EC1234567890';
+ALTER TABLE ecpay_transactions
+  ADD COLUMN cvs_payment_no TEXT,
+  ADD COLUMN cvs_validation_no TEXT;

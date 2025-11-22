@@ -274,7 +274,9 @@ const saveShopifyOrderRecord = async (userId, order) => {
 const saveLogisticsInfo = async (
   merchantTradeNo,
   logisticsId,
-  logisticsSubType
+  logisticsSubType,
+  cvsPaymentNo,
+  cvsValidationNo
 ) => {
   if (!merchantTradeNo || !logisticsId) {
     return;
@@ -283,9 +285,17 @@ const saveLogisticsInfo = async (
     `UPDATE ecpay_transactions
         SET allpay_logistics_id = $1,
             logistics_subtype = $2,
+            cvs_payment_no = COALESCE($3, cvs_payment_no),
+            cvs_validation_no = COALESCE($4, cvs_validation_no),
             updated_at = NOW()
-      WHERE merchant_trade_no = $3`,
-    [logisticsId, logisticsSubType ?? "", merchantTradeNo]
+      WHERE merchant_trade_no = $5`,
+    [
+      logisticsId,
+      logisticsSubType ?? "",
+      cvsPaymentNo ?? null,
+      cvsValidationNo ?? null,
+      merchantTradeNo,
+    ]
   );
 };
 

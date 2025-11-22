@@ -142,7 +142,10 @@ router.post("/fami/print-waybill", async (req, res) => {
 
     if (!logisticsId && merchantTradeNo) {
       const { rows } = await pool.query(
-        `SELECT allpay_logistics_id, logistics_subtype
+        `SELECT allpay_logistics_id,
+                logistics_subtype,
+                cvs_payment_no,
+                cvs_validation_no
            FROM ecpay_transactions
           WHERE merchant_trade_no = $1
           LIMIT 1`,
@@ -151,6 +154,12 @@ router.post("/fami/print-waybill", async (req, res) => {
       logisticsId = rows[0]?.allpay_logistics_id ?? "";
       if (!req.body?.logisticsSubType) {
         req.body.logisticsSubType = rows[0]?.logistics_subtype ?? "";
+      }
+      if (!req.body?.CVSPaymentNo && rows[0]?.cvs_payment_no) {
+        req.body.CVSPaymentNo = rows[0].cvs_payment_no;
+      }
+      if (!req.body?.CVSValidationNo && rows[0]?.cvs_validation_no) {
+        req.body.CVSValidationNo = rows[0].cvs_validation_no;
       }
     }
 
@@ -162,12 +171,14 @@ router.post("/fami/print-waybill", async (req, res) => {
         .status(400)
         .json({ message: "請至少提供 AllPayLogisticsID 或 MerchantTradeNo" });
     }
-    CVSPaymentNo = "15000464245";
+    const cvsPaymentNo = req.body?.CVSPaymentNo ?? "";
+    const cvsValidationNo = req.body?.CVSValidationNo ?? "";
 
     const payload = {
       MerchantID: MERCHANT_ID,
       AllPayLogisticsID: logisticsId,
-      CVSPaymentNo: CVSPaymentNo,
+      CVSPaymentNo: cvsPaymentNo,
+      CVSValidationNo: cvsValidationNo,
       MerchantTradeNo: merchantTradeNo,
       LogisticsType: "CVS",
       LogisticsSubType: "FAMIC2C",
