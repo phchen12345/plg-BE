@@ -1,3 +1,6 @@
-ALTER TABLE ecpay_transactions
-  ADD COLUMN cvs_payment_no TEXT,
-  ADD COLUMN cvs_validation_no TEXT;
+CREATE TABLE IF NOT EXISTS logistics_store_selections (
+  token TEXT PRIMARY KEY,
+  store_info JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
