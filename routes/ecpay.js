@@ -1,4 +1,4 @@
-// routes/ecpay.js
+﻿// routes/ecpay.js
 import express, { Router } from "express";
 import crypto from "crypto";
 import axios from "axios";
@@ -302,10 +302,7 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
 
   const subtype =
     LOGISTICS_SUBTYPE_MAP[shipping.method] ?? shipping.store?.logisticsSubType;
-
-  if (!subtype) {
-    return null;
-  }
+  if (!subtype) return null;
 
   const firstItem = pendingOrder.order_payload?.items?.[0];
   const goodsName = firstItem?.name ?? "PLG 商品";
@@ -328,16 +325,26 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
 
     let responseData = data?.response;
     if (typeof responseData === "string") {
-      try {
-        responseData = JSON.parse(responseData);
-      } catch (_err) {
-        responseData = null;
+      if (responseData.startsWith("1|")) {
+        const [, kv] = responseData.split("|", 2);
+        const parsed = {};
+        kv.split("&").forEach((pair) => {
+          const [k, v] = pair.split("=");
+          parsed[k] = v ?? "";
+        });
+        responseData = parsed;
+      } else {
+        try {
+          responseData = JSON.parse(responseData);
+        } catch (_err) {
+          responseData = null;
+        }
       }
     }
 
     return responseData;
   } catch (err) {
-    console.error("[logistics] shipping-order failed失敗", err);
+    console.error("[logistics] shipping-order failed", err);
     return null;
   }
 };
