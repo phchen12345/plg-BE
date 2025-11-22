@@ -2,6 +2,7 @@
 import crypto from "crypto";
 import express, { Router } from "express";
 import axios from "axios";
+import pool from "../db/db";
 
 const router = Router();
 
