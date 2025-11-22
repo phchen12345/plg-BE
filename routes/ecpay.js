@@ -451,7 +451,9 @@ router.post("/payment-return", async (req, res) => {
       await saveLogisticsInfo(
         payload.MerchantTradeNo,
         logisticsResult.AllPayLogisticsID,
-        logisticsResult.LogisticsSubType
+        logisticsResult.LogisticsSubType,
+        logisticsResult.CVSPaymentNo,
+        logisticsResult.CVSValidationNo
       );
     }
     return res.send("1|OK");
