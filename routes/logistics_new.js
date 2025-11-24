@@ -145,6 +145,8 @@ router.post("/selection", async (req, res) => {
       ExtraData: selectionToken,
     };
 
+    console.log("[logistics-new] selection payload", dataPayload);
+
     const encryptedData = encryptData(dataPayload);
     const payload = {
       MerchantID: MERCHANT_ID,
@@ -160,6 +162,8 @@ router.post("/selection", async (req, res) => {
       timeout: 30000,
       responseType: "text",
     });
+
+    console.log("[logistics-new] selection response", response);
 
     let responsePayload = response.data;
     if (typeof responsePayload === "string") {
