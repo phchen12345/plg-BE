@@ -188,6 +188,7 @@ router.get("/orders", requireAuth, async (req, res, next) => {
          fulfillment_status AS "fulfillmentStatus",
          shipping_method AS "shippingMethod",
          line_items AS "lineItems",
+         merchant_trade_no AS "merchantTradeNo",
          created_at AS "createdAt"
        FROM shopify_orders
        WHERE user_id = $1

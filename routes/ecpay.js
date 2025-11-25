@@ -181,9 +181,10 @@ const saveShopifyOrderRecord = async (order, userId, pendingOrder = null) => {
        financial_status,
        fulfillment_status,
        shipping_method,
+       merchant_trade_no,
        line_items
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (shopify_order_id)
      DO UPDATE SET
        currency = EXCLUDED.currency,
@@ -196,6 +197,7 @@ const saveShopifyOrderRecord = async (order, userId, pendingOrder = null) => {
        user_id = EXCLUDED.user_id,
        shopify_order_name = EXCLUDED.shopify_order_name,
        shopify_order_number = EXCLUDED.shopify_order_number,
+       merchant_trade_no = EXCLUDED.merchant_trade_no,
        updated_at = NOW()`,
     [
       userId,
@@ -208,6 +210,7 @@ const saveShopifyOrderRecord = async (order, userId, pendingOrder = null) => {
       order.financial_status,
       order.fulfillment_status,
       shippingMethod,
+      merchantTradeNo,
       JSON.stringify(lineItemsSnapshot),
     ]
   );
@@ -463,7 +466,8 @@ router.post("/payment-return", async (req, res) => {
     await saveShopifyOrderRecord(
       shopifyOrder,
       pendingOrder.user_id,
-      pendingOrder
+      pendingOrder,
+      MerchantTradeNo
     );
     await markTransactionProcessed(
       MerchantTradeNo,
