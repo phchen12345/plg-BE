@@ -262,7 +262,8 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
   const payload = {
     merchantTradeNo: tradeNo,
     logisticsSubType: subtype,
-    goodsAmount: pendingOrder.total_amount ?? 100,
+    MerchantTradeDate: formatDate(new Date()),
+    goodsAmount: pendingOrder.total_amount ?? 500,
     goodsName,
     receiverName: shipping.store?.name ?? "CVS Receiver",
     receiverPhone: shipping.store?.phone ?? "0911222333",

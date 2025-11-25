@@ -224,6 +224,7 @@ router.post("/shipping-order", async (req, res) => {
     const basePayload = {
       MerchantID: MERCHANT_ID,
       MerchantTradeNo: merchantTradeNo,
+      MerchantTradeDate: formatDate(new Date()),
       LogisticsSubType: logisticsSubType,
       LogisticsType: "CVS",
       GoodsAmount: Number(goodsAmount || 60),
