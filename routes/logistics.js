@@ -228,7 +228,7 @@ router.post("/shipping-order", async (req, res) => {
       LogisticsType: "CVS",
       GoodsAmount: Number(goodsAmount || 60),
       GoodsName: goodsName ?? "PLG 商品",
-      SenderName: senderName ?? "PLG",
+      SenderName: senderName ?? "PLGstore",
       SenderPhone: senderPhone ?? "021234567",
       ReceiverName: receiverName ?? "PLG 客戶",
       ReceiverPhone: receiverPhone ?? "021234567",
