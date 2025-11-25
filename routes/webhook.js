@@ -47,8 +47,7 @@ router.post("/shopify", async (req, res) => {
              fulfillment_status = $3,
              total_price = $4,
              subtotal_price = $5,
-             status_url = COALESCE($6, status_url),
-             line_items = COALESCE($7, line_items),
+             line_items = COALESCE($6, line_items),
              updated_at = NOW()
        WHERE shopify_order_id = $1`,
     [
@@ -57,7 +56,6 @@ router.post("/shopify", async (req, res) => {
       payload.fulfillment_status,
       payload.total_price,
       payload.subtotal_price,
-      payload.order_status_url,
       JSON.stringify(
         payload.line_items?.map((item) => ({
           id: item.id,

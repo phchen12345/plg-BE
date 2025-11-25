@@ -129,10 +129,9 @@ router.post("/orders", requireAuth, async (req, res, next) => {
          total_price,
          financial_status,
          fulfillment_status,
-         status_url,
          line_items
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (shopify_order_id)
        DO UPDATE SET
          currency = EXCLUDED.currency,
@@ -140,7 +139,6 @@ router.post("/orders", requireAuth, async (req, res, next) => {
          total_price = EXCLUDED.total_price,
          financial_status = EXCLUDED.financial_status,
          fulfillment_status = EXCLUDED.fulfillment_status,
-         status_url = EXCLUDED.status_url,
          line_items = EXCLUDED.line_items,
          user_id = EXCLUDED.user_id,
          shopify_order_name = EXCLUDED.shopify_order_name,
@@ -156,7 +154,6 @@ router.post("/orders", requireAuth, async (req, res, next) => {
         order.total_price,
         order.financial_status,
         order.fulfillment_status,
-        order.order_status_url,
         JSON.stringify(lineItemsSnapshot),
       ]
     );
@@ -189,7 +186,6 @@ router.get("/orders", requireAuth, async (req, res, next) => {
          total_price AS "totalPrice",
          financial_status AS "financialStatus",
          fulfillment_status AS "fulfillmentStatus",
-         status_url AS "statusUrl",
          line_items AS "lineItems",
          created_at AS "createdAt"
        FROM shopify_orders

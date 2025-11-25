@@ -16,19 +16,20 @@ const SERVER_BASE_URL =
 const CLIENT_BASE_URL = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
 
 const ECPAY_MAP_URL = "https://logistics-stage.ecpay.com.tw/Express/map";
-const ECPAY_PRINT_DOC_URL =
-  process.env.ECPAY_PRINT_DOC_URL ??
-  "https://logistics-stage.ecpay.com.tw/Express/PrintFAMIC2COrderInfo";
+const ECPAY_PRINT_URLS = {
+  FAMIC2C:
+    process.env.ECPAY_PRINT_DOC_URL ??
+    "https://logistics-stage.ecpay.com.tw/Express/PrintFAMIC2COrderInfo",
+  UNIMARTC2C:
+    process.env.ECPAY_PRINT_DOC_URL_711 ??
+    "https://logistics-stage.ecpay.com.tw/Express/PrintUniMartC2COrderInfo",
+};
 const ECPAY_CREATE_SHIPPING_URL =
   process.env.ECPAY_CREATE_SHIPPING_URL ??
   "https://logistics-stage.ecpay.com.tw/Express/Create";
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
-/**
- * 綠界專用的 URL 編碼函數。
- * 遵循綠界規範：將特殊字元進行 URL 編碼，並將空格 %20 轉為 '+'
- */
 const ecpayUrlEncode = (value) =>
   encodeURIComponent(String(value))
     .replace(/%20/g, "+")
@@ -54,20 +55,6 @@ const sortAndEncode = (params, encryptType = "MD5") => {
     .update(encoded)
     .digest("hex")
     .toUpperCase();
-};
-
-/**
- * 格式化台灣日期時間為綠界要求的格式: YYYY/MM/DD HH:mm:ss
- */
-const formatECPayDateTime = (date = new Date()) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-
-  return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 };
 
 router.post(
@@ -105,7 +92,6 @@ router.post(
 
 router.post("/map-token", (req, res, next) => {
   try {
-    // 【修正 1-1】：將預設值從 B2C 的 "FAMI" 改為 C2C 的 "FAMIC2C"
     const logisticsSubType = req.body?.logisticsSubType || "FAMIC2C";
     const extraData = req.body?.extraData || "";
 
@@ -123,7 +109,6 @@ router.post("/map-token", (req, res, next) => {
       Device: "0",
     };
 
-    // 【修正 1-2】：C2C 服務必須使用 MD5 雜湊
     const CheckMacValue = sortAndEncode(baseParams, "MD5");
 
     res.json({
@@ -135,68 +120,80 @@ router.post("/map-token", (req, res, next) => {
   }
 });
 
-router.post("/fami/print-waybill", async (req, res) => {
+const buildPrintFields = async ({
+  logisticsSubType,
+  merchantTradeNo = "",
+  logisticsId = "",
+  preview = false,
+  cvsPaymentNo = "",
+  cvsValidationNo = "",
+}) => {
+  if (!logisticsId && merchantTradeNo) {
+    const { rows } = await pool.query(
+      `SELECT allpay_logistics_id,
+              logistics_subtype,
+              cvs_payment_no,
+              cvs_validation_no
+         FROM ecpay_transactions
+        WHERE merchant_trade_no = $1
+        LIMIT 1`,
+      [merchantTradeNo]
+    );
+    const row = rows[0] ?? {};
+    logisticsId = row.allpay_logistics_id ?? "";
+    logisticsSubType = logisticsSubType || row.logistics_subtype || "";
+    cvsPaymentNo = cvsPaymentNo || row.cvs_payment_no || "";
+    cvsValidationNo = cvsValidationNo || row.cvs_validation_no || "";
+  }
+
+  if (!logisticsId && !merchantTradeNo) {
+    throw new Error("請至少提供 AllPayLogisticsID 或 MerchantTradeNo");
+  }
+
+  const payload = {
+    MerchantID: MERCHANT_ID,
+    AllPayLogisticsID: logisticsId,
+    CVSPaymentNo: cvsPaymentNo,
+    CVSValidationNo: cvsValidationNo,
+    MerchantTradeNo: merchantTradeNo,
+    LogisticsType: "CVS",
+    LogisticsSubType: logisticsSubType,
+    IsPreview: preview ? "1" : "0",
+  };
+
+  const CheckMacValue = sortAndEncode(payload, "MD5");
+  return { payload: { ...payload, CheckMacValue }, logisticsSubType };
+};
+
+const createPrintWaybillHandler = (logisticsSubType) => async (req, res) => {
   try {
-    const merchantTradeNo = req.body?.merchantTradeNo ?? "";
-    let { logisticsId = "", preview = false } = req.body ?? {};
-
-    if (!logisticsId && merchantTradeNo) {
-      const { rows } = await pool.query(
-        `SELECT allpay_logistics_id,
-                logistics_subtype,
-                cvs_payment_no,
-                cvs_validation_no
-           FROM ecpay_transactions
-          WHERE merchant_trade_no = $1
-          LIMIT 1`,
-        [merchantTradeNo]
-      );
-      logisticsId = rows[0]?.allpay_logistics_id ?? "";
-      if (!req.body?.logisticsSubType) {
-        req.body.logisticsSubType = rows[0]?.logistics_subtype ?? "";
-      }
-      if (!req.body?.CVSPaymentNo && rows[0]?.cvs_payment_no) {
-        req.body.CVSPaymentNo = rows[0].cvs_payment_no;
-      }
-      if (!req.body?.CVSValidationNo && rows[0]?.cvs_validation_no) {
-        req.body.CVSValidationNo = rows[0].cvs_validation_no;
-      }
-    }
-
     if (!MERCHANT_ID || !HASH_KEY || !HASH_IV) {
       return res.status(500).json({ message: "ECPay 變數未設定" });
     }
-    if (!logisticsId && !merchantTradeNo) {
-      return res
-        .status(400)
-        .json({ message: "請至少提供 AllPayLogisticsID 或 MerchantTradeNo" });
-    }
-    const cvsPaymentNo = req.body?.CVSPaymentNo ?? "";
-    const cvsValidationNo = req.body?.CVSValidationNo ?? "";
 
-    const payload = {
-      MerchantID: MERCHANT_ID,
-      AllPayLogisticsID: logisticsId,
-      CVSPaymentNo: cvsPaymentNo,
-      CVSValidationNo: cvsValidationNo,
-      MerchantTradeNo: merchantTradeNo,
-      LogisticsType: "CVS",
-      LogisticsSubType: "FAMIC2C",
-      IsPreview: preview ? "1" : "0",
-    };
-
-    // 【修正 2】：C2C 服務必須使用 MD5 雜湊
-    const CheckMacValue = sortAndEncode(payload, "MD5");
+    const { payload } = await buildPrintFields({
+      logisticsSubType,
+      merchantTradeNo: req.body?.merchantTradeNo,
+      logisticsId: req.body?.logisticsId,
+      cvsPaymentNo: req.body?.CVSPaymentNo,
+      cvsValidationNo: req.body?.CVSValidationNo,
+      preview: Boolean(req.body?.preview),
+    });
 
     res.json({
-      action: ECPAY_PRINT_DOC_URL,
-      fields: { ...payload, CheckMacValue },
+      action: ECPAY_PRINT_URLS[logisticsSubType],
+      fields: payload,
     });
   } catch (err) {
-    console.error("[logistics] fami print error", err);
-    res.status(500).json({ message: "建立託運單列印資料失敗" });
+    console.error(`[logistics] ${logisticsSubType} print error`, err);
+    const message =
+      err instanceof Error ? err.message : "建立託運單列印資料失敗";
+    res.status(500).json({ message });
   }
-});
+};
+
+router.post("/fami/print-waybill", createPrintWaybillHandler("FAMIC2C"));
+router.post("/seven/print-waybill", createPrintWaybillHandler("UNIMARTC2C"));
 
 router.post("/shipping-order", async (req, res) => {
   try {
@@ -204,7 +201,6 @@ router.post("/shipping-order", async (req, res) => {
       return res.status(500).json({ message: "ECPay 變數未設定" });
     }
 
-    // 驗證必要欄位
     const {
       merchantTradeNo,
       logisticsSubType = "FAMIC2C",
@@ -218,62 +214,69 @@ router.post("/shipping-order", async (req, res) => {
       receiverStoreId,
     } = req.body;
 
-    // 檢查必填欄位
+    if (!merchantTradeNo) {
+      return res.status(400).json({ message: "缺少 MerchantTradeNo" });
+    }
     if (!receiverStoreId) {
-      return res.status(400).json({
-        message: "缺少必要欄位：receiverStoreId (收件門市代號)",
-      });
+      return res.status(400).json({ message: "缺少 ReceiverStoreId" });
     }
-
-    if (!goodsName || !goodsAmount) {
-      return res.status(400).json({
-        message: "缺少必要欄位：goodsName 或 goodsAmount",
-      });
-    }
-
-    // 驗證手機號碼格式 (台灣手機號碼: 09 開頭，共 10 碼)
-    const senderCellPhone = "0911111111";
-
-    const finalMerchantTradeNo = merchantTradeNo ?? `EC${Date.now()}`;
 
     const basePayload = {
       MerchantID: MERCHANT_ID,
-      MerchantTradeNo: finalMerchantTradeNo,
-      MerchantTradeDate: formatECPayDateTime(),
-      LogisticsType: "CVS",
+      MerchantTradeNo: merchantTradeNo,
       LogisticsSubType: logisticsSubType,
-      GoodsAmount: String(goodsAmount),
-      CollectionAmount: String(req.body?.collectionAmount ?? 0),
-      IsCollection: req.body?.isCollection ?? "N",
-      GoodsName: goodsName,
-      SenderName: senderName || "PLG寄件者",
-      SenderPhone: req.body?.senderLandline || "",
-      SenderCellPhone: "0911111111",
-      ReceiverName: receiverName || "PLG收件者",
-      ReceiverCellPhone: "0911111111",
+      LogisticsType: "CVS",
+      GoodsAmount: Number(goodsAmount || 60),
+      GoodsName: goodsName ?? "PLG 商品",
+      SenderName: senderName ?? "PLG",
+      SenderPhone: senderPhone ?? "021234567",
+      ReceiverName: receiverName ?? "PLG 客戶",
+      ReceiverPhone: receiverPhone ?? "021234567",
+      ReceiverCellPhone: receiverCellPhone ?? "0911222333",
       ReceiverStoreID: receiverStoreId,
-      ServerReplyURL:
-        req.body?.serverReplyUrl ??
+      ServerReplyURL: `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
+      ReceiverEmail: req.body?.receiverEmail ?? "",
+      ReturnStoreID: req.body?.returnStoreId ?? "",
+      TradeDesc: req.body?.tradeDesc ?? "PLG 訂單",
+      LogisticsC2CReplyURL:
+        req.body?.logisticsC2CReplyURL ??
         `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
+      ScheduledPickupTime: req.body?.scheduledPickupTime ?? "4",
+      Temperature: req.body?.temperature ?? "0001",
+      Specification: req.body?.specification ?? "0001",
+      EnableSelectDeliveryTime: req.body?.enableSelectDeliveryTime ?? "Y",
+      EnableSelectReceipt: req.body?.enableSelectReceipt ?? "Y",
+      EnableSelectPickup: req.body?.enableSelectPickup ?? "Y",
+      SenderZipCode: req.body?.senderZipCode ?? "",
+      SenderAddress: req.body?.senderAddress ?? "",
+      ReceiverZipCode: req.body?.receiverZipCode ?? "",
+      ReceiverAddress: req.body?.receiverAddress ?? "",
+      Remark: req.body?.remark ?? "",
     };
 
-    // 根據物流子類型添加必要欄位
+    const receiverSubTypes = [
+      "UNIMARTC2C",
+      "FAMIC2C",
+      "HILIFEC2C",
+      "OKMARTC2C",
+    ];
+    if (receiverSubTypes.includes(logisticsSubType)) {
+      basePayload.ReceiverStoreID = receiverStoreId;
+    }
+
     if (
-      logisticsSubType === "FAMIC2C" ||
       logisticsSubType === "UNIMARTC2C" ||
+      logisticsSubType === "FAMIC2C" ||
       logisticsSubType === "HILIFEC2C"
     ) {
-      // C2C 類型需要寄件人地址
       basePayload.ReturnStoreID = req.body?.returnStoreId || receiverStoreId;
     }
 
-    // 【修正 3】：C2C 服務必須使用 MD5 雜湊
     const CheckMacValue = sortAndEncode(basePayload, "MD5");
     const payload = { ...basePayload, CheckMacValue };
 
     console.log("[logistics] 建立物流訂單請求參數:", payload);
 
-    // 使用 application/x-www-form-urlencoded 格式
     const formData = new URLSearchParams();
     Object.entries(payload).forEach(([key, value]) => {
       formData.append(key, String(value));
@@ -294,12 +297,9 @@ router.post("/shipping-order", async (req, res) => {
 
     console.log("[logistics] 綠界回應CheckMacValue:", data);
 
-    // 綠界可能回傳 JSON 格式 (1|OK) 或 HTML 錯誤頁面
     if (typeof data === "string") {
-      // 嘗試解析 綠界回傳的格式：RtnCode|RtnMsg
       const parts = data.split("|");
       if (parts[0] === "1" || parts[0] === "2") {
-        // 1 = 成功, 2 = 失敗但有回傳資訊
         return res.json({
           success: parts[0] === "1",
           message: parts[1] || "成功",
@@ -308,7 +308,6 @@ router.post("/shipping-order", async (req, res) => {
         });
       }
 
-      // 如果是 HTML 錯誤頁面
       if (data.includes("<!DOCTYPE html>")) {
         return res.status(500).json({
           message: "綠界 API 回傳錯誤頁面，請檢查參數是否正確",
@@ -329,7 +328,6 @@ router.post("/shipping-order", async (req, res) => {
     if (axios.isAxiosError(err)) {
       const responseData = err.response?.data;
 
-      // 如果是 HTML 錯誤頁面
       if (
         typeof responseData === "string" &&
         responseData.includes("<!DOCTYPE html>")
@@ -364,13 +362,11 @@ router.post(
   (req, res) => {
     console.log("[logistics] shipping callback 收到通知:", req.body);
 
-    // 驗證 CheckMacValue (可選但建議)
     const receivedMac = req.body.CheckMacValue;
     if (receivedMac) {
       const params = { ...req.body };
       delete params.CheckMacValue;
 
-      // 【修正 4】：C2C 服務必須使用 MD5 雜湊
       const calculatedMac = sortAndEncode(params, "MD5");
 
       if (calculatedMac !== receivedMac) {
@@ -379,10 +375,6 @@ router.post(
       }
     }
 
-    // 儲存物流資訊到資料庫
-    // TODO: 將 req.body 的物流資訊存入資料庫
-
-    // 回應綠界必須是 "1|OK"
     res.send("1|OK");
   }
 );
