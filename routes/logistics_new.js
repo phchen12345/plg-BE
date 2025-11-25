@@ -163,8 +163,6 @@ router.post("/selection", async (req, res) => {
       responseType: "text",
     });
 
-    console.log("[logistics-new] selection response", response);
-
     let responsePayload = response.data;
     if (typeof responsePayload === "string") {
       const trimmed = responsePayload.trim();
@@ -216,17 +214,25 @@ router.post(
   "/selection-callback",
   express.urlencoded({ extended: false }),
   async (req, res) => {
+    const token = req.body?.ExtraData ?? req.body?.extraData ?? "";
+    const storeInfo = normalizeStoreInfo(req.body);
+
+    // 步驟 1: 立即回覆綠界，避免超時
+    res.send("1|OK");
+
     try {
+      // 步驟 2: 在回覆之後，再執行耗時的資料庫操作
       console.log("[logistics-new] selection callback", req.body);
-      const token = req.body?.ExtraData ?? req.body?.extraData ?? "";
-      const storeInfo = normalizeStoreInfo(req.body);
       if (token && storeInfo.storeId) {
         await saveStoreSelection(token, storeInfo);
       }
-      res.send("1|OK");
+      // 注意：錯誤處理需要獨立出來，避免影響 res.send("1|OK")
     } catch (err) {
-      console.error("[logistics-new] selection callback error", err);
-      res.send("0|Error");
+      console.error(
+        "[logistics-new] selection callback error during DB save",
+        err
+      );
+      // 在這裡只能記錄錯誤，因為已經回覆綠界
     }
   }
 );
@@ -256,5 +262,24 @@ router.get("/selection-result/:token", async (req, res) => {
     res.status(500).json({ message: "取得門市資訊失敗" });
   }
 });
+
+router.post(
+  "/client-callback",
+  express.urlencoded({ extended: false }),
+  (req, res) => {
+    const token =
+      req.body?.ExtraData ??
+      req.body?.selectionToken ??
+      req.body?.extraData ??
+      "";
+
+    const redirectUrl = new URL("/payment/store-callback", CLIENT_BASE_URL);
+    if (token) {
+      redirectUrl.searchParams.set("token", token);
+    }
+
+    res.redirect(303, redirectUrl.toString());
+  }
+);
 
 export default router;
