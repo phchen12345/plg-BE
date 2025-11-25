@@ -30,6 +30,18 @@ const ECPAY_CREATE_SHIPPING_URL =
 
 const SERVER_REPLY_URL = `${SERVER_BASE_URL}/api/logistics/map-callback`;
 
+const padZero = (num) => String(num).padStart(2, "0");
+
+const formatDate = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = padZero(date.getMonth() + 1);
+  const day = padZero(date.getDate());
+  const hours = padZero(date.getHours());
+  const minutes = padZero(date.getMinutes());
+  const seconds = padZero(date.getSeconds());
+  return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+};
+
 const ecpayUrlEncode = (value) =>
   encodeURIComponent(String(value))
     .replace(/%20/g, "+")
