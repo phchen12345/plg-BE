@@ -4,7 +4,6 @@ import crypto from "crypto";
 import axios from "axios";
 import pool from "../db/db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { channel } from "diagnostics_channel";
 
 const router = Router();
 router.use(express.urlencoded({ extended: false }));
@@ -56,7 +55,7 @@ const formatDate = (date) => {
 
 const encodeParams = (params) => {
   const query = Object.keys(params)
-    .filter((key) => params[key] !== undefined) // 保留 ""
+    .filter((key) => params[key] !== undefined)
     .sort((a, b) => a.localeCompare(b))
     .map((key) => `${key}=${params[key]}`)
     .join("&");
@@ -126,7 +125,12 @@ const fetchPendingOrder = async (tradeNo) => {
   return rows[0] ?? null;
 };
 
-const markTransactionProcessed = async (tradeNo, order) => {
+const markTransactionProcessed = async (
+  tradeNo,
+  shopifyOrderId,
+  shopifyOrderName,
+  shopifyOrderNumber
+) => {
   await pool.query(
     `UPDATE ecpay_transactions
         SET processed_at = NOW(),
@@ -135,86 +139,24 @@ const markTransactionProcessed = async (tradeNo, order) => {
             shopify_order_number = $4,
             updated_at = NOW()
       WHERE merchant_trade_no = $1`,
-    [
-      tradeNo,
-      order?.id ?? null,
-      order?.name ?? null,
-      order?.order_number ?? null,
-    ]
+    [tradeNo, shopifyOrderId, shopifyOrderName, shopifyOrderNumber]
   );
 };
 
-const buildShopifyOrderPayload = (storedOrder = {}, paymentResult = {}) => {
-  const shippingMethod = storedOrder?.shipping?.method ?? "home";
-  const shippingAddress =
-    shippingMethod === "home"
-      ? {
-          first_name: storedOrder.shipping?.address?.receiver ?? "PLG",
-          address1: storedOrder.shipping?.address?.detail ?? "",
-          city: storedOrder.shipping?.address?.city ?? "",
-          province: storedOrder.shipping?.address?.district ?? "",
-          country: "TW",
-        }
-      : {
-          first_name: storedOrder.shipping?.store?.name ?? "CVS",
-          last_name: storedOrder.shipping?.store?.id ?? "",
-          address1: storedOrder.shipping?.store?.address ?? "",
-          phone: storedOrder.shipping?.store?.phone ?? "",
-          city: "便利商店",
-          province: storedOrder.shipping?.store?.logisticsSubType ?? "",
-          country: "TW",
-        };
-
-  const lineItems =
-    storedOrder.items?.map((item) => ({
-      title: item.name ?? `PLG 商品 #${item.productId ?? ""}`,
-      quantity: item.quantity ?? 1,
-      price: Number(item.priceCents ?? 0).toFixed(2),
-      sku: item.productId ? String(item.productId) : undefined,
-      variant_id: item.shopifyVariantId
-        ? Number(item.shopifyVariantId)
-        : undefined,
-    })) ?? [];
-
-  const amount =
-    Number(storedOrder?.totals?.total ?? paymentResult.TotalAmount ?? 0) || 0;
-
-  const baseOrder = {
-    line_items: lineItems.length
-      ? lineItems
-      : [
-          {
-            title: storedOrder.description ?? "PLG order",
-            quantity: 1,
-            price: amount.toFixed(2),
-          },
-        ],
-    currency: "TWD",
-    financial_status: "paid",
-    tags: `plg-ecpay,ship-${shippingMethod}`,
-    shipping_address: shippingAddress,
-    note: `ECPay TradeNo: ${paymentResult.MerchantTradeNo ?? ""}`,
-    note_attributes: [
-      { name: "ecpay_trade_no", value: paymentResult.TradeNo ?? "" },
-      { name: "ecpay_rtn_msg", value: paymentResult.RtnMsg ?? "" },
-    ],
-    transactions: [
-      {
-        kind: "sale",
-        status: "success",
-        amount: amount.toFixed(2),
-        gateway: "ECPay",
-        authorization: paymentResult.TradeNo ?? "",
-        processed_at: new Date().toISOString(),
-      },
-    ],
-  };
-
-  return { order: baseOrder };
+const resolveShippingMethod = (order = {}, pendingOrder = {}) => {
+  if (pendingOrder?.shipping?.method) {
+    return pendingOrder.shipping.method;
+  }
+  const tags = (order.tags ?? "").toLowerCase();
+  if (tags.includes("plg-cvs-seveneleven")) return "seveneleven";
+  if (tags.includes("plg-cvs-familymart")) return "familymart";
+  if (tags.includes("plg-home-delivery")) return "home";
+  return null;
 };
 
-const mapLineItems = (items = []) =>
-  items.map((item) => ({
+const saveShopifyOrderRecord = async (order, userId, pendingOrder = null) => {
+  if (!order?.id) return;
+  const lineItemsSnapshot = (order.line_items ?? []).map((item) => ({
     id: item.id,
     title: item.title,
     quantity: item.quantity,
@@ -222,55 +164,39 @@ const mapLineItems = (items = []) =>
     sku: item.sku,
   }));
 
-const saveShopifyOrderRecord = async (userId, order) => {
-  if (!userId || !order?.id) {
-    return;
-  }
-  const lineItemsSnapshot = mapLineItems(order.line_items ?? []);
-  const resolveShippingMethod = (order = {}, pendingOrder = {}) => {
-    if (pendingOrder?.shipping?.method) {
-      return pendingOrder.shipping.method;
-    }
-
-    const tags = (order.tags ?? "").toLowerCase();
-    if (tags.includes("plg-cvs-seveneleven")) return "seveneleven";
-    if (tags.includes("plg-cvs-familymart")) return "familymart";
-    if (tags.includes("plg-home-delivery")) return "home";
-    return null;
-  };
-
   const shippingMethod = resolveShippingMethod(
     order,
     pendingOrder?.order_payload
   );
+
   await pool.query(
     `INSERT INTO shopify_orders (
-     user_id,
-     shopify_order_id,
-     shopify_order_name,
-     shopify_order_number,
-     currency,
-     subtotal_price,
-     total_price,
-     financial_status,
-     fulfillment_status,
-     shipping_method,
-     line_items
-   )
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-   ON CONFLICT (shopify_order_id)
-   DO UPDATE SET
-     currency = EXCLUDED.currency,
-     subtotal_price = EXCLUDED.subtotal_price,
-     total_price = EXCLUDED.total_price,
-     financial_status = EXCLUDED.financial_status,
-     fulfillment_status = EXCLUDED.fulfillment_status,
-     shipping_method = EXCLUDED.shipping_method,
-     line_items = EXCLUDED.line_items,
-     user_id = EXCLUDED.user_id,
-     shopify_order_name = EXCLUDED.shopify_order_name,
-     shopify_order_number = EXCLUDED.shopify_order_number,
-     updated_at = NOW()`,
+       user_id,
+       shopify_order_id,
+       shopify_order_name,
+       shopify_order_number,
+       currency,
+       subtotal_price,
+       total_price,
+       financial_status,
+       fulfillment_status,
+       shipping_method,
+       line_items
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (shopify_order_id)
+     DO UPDATE SET
+       currency = EXCLUDED.currency,
+       subtotal_price = EXCLUDED.subtotal_price,
+       total_price = EXCLUDED.total_price,
+       financial_status = EXCLUDED.financial_status,
+       fulfillment_status = EXCLUDED.fulfillment_status,
+       shipping_method = EXCLUDED.shipping_method,
+       line_items = EXCLUDED.line_items,
+       user_id = EXCLUDED.user_id,
+       shopify_order_name = EXCLUDED.shopify_order_name,
+       shopify_order_number = EXCLUDED.shopify_order_number,
+       updated_at = NOW()`,
     [
       userId,
       order.id,
@@ -421,66 +347,160 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
 });
 
 router.post("/payment-return", async (req, res) => {
-  const payload = req.body;
-
-  const receivedCheckMac = payload.CheckMacValue;
-  const { CheckMacValue: _, ...others } = payload;
-  const calculated = encodeParams(others);
-
-  if (receivedCheckMac !== calculated) {
-    console.warn("[payment-return] CheckMac mismatch", payload.MerchantTradeNo);
-    return res.status(400).send("0|CheckMacValue Error");
-  }
-
-  if (payload.RtnCode !== "1") {
-    console.log("[payment-return] non-success RtnCode", payload.RtnCode);
-    return res.send("1|OK");
-  }
-
-  const pendingOrder = await fetchPendingOrder(payload.MerchantTradeNo);
-  if (!pendingOrder) {
-    return res.status(404).send("0|Order Not Found");
-  }
-
-  if (pendingOrder.processed_at) {
-    return res.send("1|OK");
-  }
-
   try {
-    const shopifyPayload = buildShopifyOrderPayload(
-      pendingOrder.order_payload,
-      payload
-    );
+    const {
+      RtnCode,
+      RtnMsg,
+      MerchantTradeNo,
+      TradeNo,
+      TradeAmt,
+      PaymentDate,
+      PaymentType,
+      SimulatePaid,
+      CheckMacValue,
+    } = req.body;
 
-    const { data } = await shopifyClient.post("/orders.json", shopifyPayload);
-    const shopifyOrder = data?.order;
+    console.log("[ecpay] payment-return", req.body);
 
-    if (!shopifyOrder?.id) {
-      throw new Error("Shopify did not return order id");
+    if (!MerchantTradeNo || !CheckMacValue) {
+      return res.status(400).send("0|Fail");
     }
-    await markTransactionProcessed(payload.MerchantTradeNo, shopifyOrder);
-    await saveShopifyOrderRecord(pendingOrder.user_id, shopifyOrder);
-    const logisticsResult = await createLogisticsOrder(
-      payload.MerchantTradeNo,
+
+    const pendingOrder = await fetchPendingOrder(MerchantTradeNo);
+    if (!pendingOrder) {
+      console.warn("[ecpay] payment-return missing pending order");
+      return res.status(404).send("0|Order Not Found");
+    }
+    if (pendingOrder.processed_at) {
+      return res.send("1|OK");
+    }
+
+    const verifyParams = { ...req.body };
+    const receivedMac = verifyParams.CheckMacValue;
+    delete verifyParams.CheckMacValue;
+
+    const calculatedMac = encodeParams(verifyParams);
+    if (receivedMac !== calculatedMac) {
+      console.error("[ecpay] payment-return CheckMacValue mismatch");
+      return res.status(400).send("0|Invalid CheckMacValue");
+    }
+
+    if (Number(RtnCode) !== 1) {
+      console.error("[ecpay] payment-return failed", RtnCode, RtnMsg);
+      return res.status(400).send("0|Fail");
+    }
+
+    if (Number(TradeAmt) !== Number(pendingOrder.total_amount)) {
+      console.error("[ecpay] payment-return amount mismatch");
+      return res.status(400).send("0|Amount Mismatch");
+    }
+
+    const orderPayload = pendingOrder.order_payload ?? {};
+    const lineItems = orderPayload.items ?? [];
+    const shipping = orderPayload.shipping ?? {};
+    const shippingStore = shipping.store ?? null;
+
+    const shopifyOrderPayload = {
+      order: {
+        line_items: lineItems.map((item) => ({
+          title: item.name ?? `PLG 商品 #${item.productId}`,
+          quantity: item.quantity,
+          price: (item.priceCents ?? 0 / 100).toFixed(2),
+          sku: String(item.productId),
+        })),
+        financial_status: "paid",
+        fulfillment_status: "unfulfilled",
+        tags:
+          shipping.method === "home"
+            ? "plg-home-delivery"
+            : `plg-cvs-${shipping.method}`,
+        shipping_address:
+          shipping.method === "home"
+            ? {
+                first_name: shipping.address?.receiver ?? "PLG",
+                address1: shipping.address?.detail ?? "",
+                city: shipping.address?.city ?? "",
+                province: shipping.address?.district ?? "",
+                zip: shipping.address?.postal ?? "",
+                country: "TW",
+              }
+            : {
+                first_name: shippingStore?.name ?? "CVS",
+                last_name: shippingStore?.id ?? "",
+                address1: shippingStore?.address ?? "",
+                phone: shippingStore?.phone ?? "",
+                city: "台灣",
+                province: shippingStore?.logisticsSubType ?? "",
+                country: "TW",
+              },
+        note: shipping.method === "home" ? "宅配" : "超商取貨付款",
+        note_attributes:
+          shipping.method === "home"
+            ? []
+            : [
+                { name: "storeId", value: shippingStore?.id ?? "" },
+                { name: "storeName", value: shippingStore?.name ?? "" },
+                { name: "storeAddress", value: shippingStore?.address ?? "" },
+                {
+                  name: "logisticsSubType",
+                  value: shippingStore?.logisticsSubType ?? "",
+                },
+              ],
+      },
+    };
+
+    const shopifyResp = await shopifyClient.post(
+      "/orders.json",
+      shopifyOrderPayload
+    );
+    const shopifyOrder = shopifyResp.data?.order;
+    if (!shopifyOrder?.id) {
+      console.error("[ecpay] shopify order creation failed", shopifyResp.data);
+      return res.status(502).send("0|Shopify Error");
+    }
+
+    await saveShopifyOrderRecord(
+      shopifyOrder,
+      pendingOrder.user_id,
       pendingOrder
     );
-    if (logisticsResult?.AllPayLogisticsID) {
-      await saveLogisticsInfo(
-        payload.MerchantTradeNo,
-        logisticsResult.AllPayLogisticsID,
-        logisticsResult.LogisticsSubType,
-        logisticsResult.CVSPaymentNo,
-        logisticsResult.CVSValidationNo
-      );
-    }
-    return res.send("1|OK");
-  } catch (err) {
-    console.error(
-      "[ecpay] Shopify order creation failed",
-      err.response?.data ?? err
+    await markTransactionProcessed(
+      MerchantTradeNo,
+      shopifyOrder.id,
+      shopifyOrder.name,
+      shopifyOrder.order_number
     );
-    return res.status(500).send("0|Shopify Order Failed");
+
+    if (shipping.method !== "home") {
+      const logisticsResponse = await createLogisticsOrder(
+        MerchantTradeNo,
+        pendingOrder
+      );
+      if (
+        logisticsResponse &&
+        logisticsResponse.AllPayLogisticsID &&
+        logisticsResponse.RtnCode === "1"
+      ) {
+        await saveLogisticsInfo(
+          MerchantTradeNo,
+          logisticsResponse.AllPayLogisticsID,
+          logisticsResponse.LogisticsSubType,
+          logisticsResponse.CVSPaymentNo,
+          logisticsResponse.CVSValidationNo
+        );
+      }
+    }
+
+    res.send("1|OK");
+  } catch (err) {
+    console.error("[ecpay] payment-return error", err);
+    res.status(500).send("0|Error");
   }
+});
+
+router.post("/client-return", (req, res) => {
+  console.log("[ecpay] client-return body", req.body);
+  res.redirect(302, "https://plg-test.vercel.app/orders");
 });
 
 export default router;
