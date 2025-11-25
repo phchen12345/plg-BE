@@ -414,7 +414,9 @@ router.post("/payment-return", async (req, res) => {
     const shippingStore = shipping.store ?? null;
 
     const shippingLines =
-      shipping.method === "home" || shipping.method === "familymart"
+      shipping.method === "home" ||
+      shipping.method === "familymart" ||
+      shipping.method === "seveneleven"
         ? [
             {
               title:
@@ -422,7 +424,9 @@ router.post("/payment-return", async (req, res) => {
                   ? "宅配運費"
                   : shipping.method === "familymart"
                   ? "全家運費"
-                  : "7-11 運費",
+                  : shipping.method === "seveneleven"
+                  ? "7-11運費"
+                  : "運費",
               price: orderPayload.totals?.shippingFee.toFixed(2),
               code: shipping.method,
               source: "Custom",
