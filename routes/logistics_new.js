@@ -162,7 +162,7 @@ router.post("/selection", async (req, res) => {
       timeout: 30000,
       responseType: "text",
     });
-
+    console.log("[logistics-new] ECPay raw response", response.data);
     let responsePayload = response.data;
     if (typeof responsePayload === "string") {
       const trimmed = responsePayload.trim();
