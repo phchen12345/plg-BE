@@ -186,6 +186,7 @@ router.get("/orders", requireAuth, async (req, res, next) => {
          total_price AS "totalPrice",
          financial_status AS "financialStatus",
          fulfillment_status AS "fulfillmentStatus",
+         shipping_method AS "shippingMethod",
          line_items AS "lineItems",
          created_at AS "createdAt"
        FROM shopify_orders
