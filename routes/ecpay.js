@@ -154,7 +154,12 @@ const resolveShippingMethod = (order = {}, pendingOrder = {}) => {
   return null;
 };
 
-const saveShopifyOrderRecord = async (order, userId, pendingOrder = null) => {
+const saveShopifyOrderRecord = async (
+  order,
+  userId,
+  pendingOrder = null,
+  merchantTradeNo = null
+) => {
   if (!order?.id) return;
   const lineItemsSnapshot = (order.line_items ?? []).map((item) => ({
     id: item.id,
