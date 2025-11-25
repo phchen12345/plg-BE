@@ -246,6 +246,7 @@ router.post("/shipping-order", async (req, res) => {
       ReceiverName: receiverName ?? "PLG 客戶",
       ReceiverPhone: receiverPhone ?? "021234567",
       ReceiverCellPhone: receiverCellPhone ?? "0911222333",
+      SenderCellPhone: req.body?.senderCellPhone ?? "0911222333",
       ReceiverStoreID: receiverStoreId,
       ServerReplyURL: `${SERVER_BASE_URL}/api/logistics/shipping-callback`,
       ReceiverEmail: req.body?.receiverEmail ?? "",
