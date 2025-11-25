@@ -477,11 +477,7 @@ router.post("/payment-return", async (req, res) => {
         MerchantTradeNo,
         pendingOrder
       );
-      if (
-        logisticsResponse &&
-        logisticsResponse.AllPayLogisticsID &&
-        logisticsResponse.RtnCode === "1"
-      ) {
+      if (logisticsResponse && logisticsResponse.AllPayLogisticsID) {
         await saveLogisticsInfo(
           MerchantTradeNo,
           logisticsResponse.AllPayLogisticsID,
