@@ -171,31 +171,57 @@ router.post("/orders", requireAuth, async (req, res, next) => {
 
 router.get("/orders", requireAuth, async (req, res, next) => {
   try {
-    const userId = req.user.sub;
+    const { isAdmin, sub: userId } = req.user;
     const limit = Math.min(
       Math.max(parseInt(req.query.limit, 10) || 10, 1),
       50
     );
-    const { rows } = await pool.query(
-      `SELECT
-         shopify_order_id AS "id",
-         shopify_order_name AS "name",
-         shopify_order_number AS "number",
-         currency,
-         subtotal_price AS "subtotalPrice",
-         total_price AS "totalPrice",
-         financial_status AS "financialStatus",
-         fulfillment_status AS "fulfillmentStatus",
-         shipping_method AS "shippingMethod",
-         line_items AS "lineItems",
-         merchant_trade_no AS "merchantTradeNo",
-         created_at AS "createdAt"
-       FROM shopify_orders
-       WHERE user_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2`,
-      [userId, limit]
-    );
+
+    let rows;
+    if (isAdmin) {
+      ({ rows } = await pool.query(
+        `SELECT
+           shopify_order_id AS "id",
+           shopify_order_name AS "name",
+           shopify_order_number AS "number",
+           currency,
+           subtotal_price AS "subtotalPrice",
+           total_price AS "totalPrice",
+           financial_status AS "financialStatus",
+           fulfillment_status AS "fulfillmentStatus",
+           shipping_method AS "shippingMethod",
+           merchant_trade_no AS "merchantTradeNo",
+           line_items AS "lineItems",
+           user_id AS "userId",
+           created_at AS "createdAt"
+         FROM shopify_orders
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [limit]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `SELECT
+           shopify_order_id AS "id",
+           shopify_order_name AS "name",
+           shopify_order_number AS "number",
+           currency,
+           subtotal_price AS "subtotalPrice",
+           total_price AS "totalPrice",
+           financial_status AS "financialStatus",
+           fulfillment_status AS "fulfillmentStatus",
+           shipping_method AS "shippingMethod",
+           merchant_trade_no AS "merchantTradeNo",
+           line_items AS "lineItems",
+           user_id AS "userId",
+           created_at AS "createdAt"
+         FROM shopify_orders
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [userId, limit]
+      ));
+    }
 
     const orders = rows.map((row) => ({
       ...row,
@@ -204,7 +230,7 @@ router.get("/orders", requireAuth, async (req, res, next) => {
         : mapLineItems(row.lineItems ?? []),
     }));
 
-    res.json({ orders });
+    res.json({ orders, isAdmin });
   } catch (err) {
     if (axios.isAxiosError(err)) {
       return res

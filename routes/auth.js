@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import pool from "../db/db.js";
 import { sendVerificationEmail } from "../util/emailService.js";
+import { isAdminEmail } from "../util/admin.js";
 
 const router = Router();
 const isProd = process.env.NODE_ENV === "production";
@@ -21,10 +22,16 @@ const TAIWAN_PHONE_REGEX = /^09\d{8}$/;
 const CODE_TTL_MS = 5 * 60 * 1000;
 
 /* ---------- 共用 ---------- */
-const signToken = (user) =>
-  jwt.sign({ sub: user.id, email: user.email ?? null }, JWT_SECRET, {
-    expiresIn: "7d",
-  });
+const signToken = (user) => {
+  const isAdmin = Boolean(user.is_admin ?? user.isAdmin);
+  return jwt.sign(
+    { sub: user.id, email: user.email ?? null, isAdmin },
+    JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
+};
 
 const sendAuthCookie = (res, token) =>
   res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
@@ -37,25 +44,29 @@ const generateGuestEmail = () => {
   return `guest_${unique}@guest.local`;
 };
 
-/* ---------- 取得登入資訊 ---------- */
+/* ---------- 取得登入資料 ---------- */
 router.get("/me", (req, res) => {
   const token = req.cookies?.[COOKIE_NAME];
   if (!token) return res.status(401).json({ message: "未登入" });
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    return res.json({ userId: payload.sub, email: payload.email });
+    return res.json({
+      userId: payload.sub,
+      email: payload.email,
+      isAdmin: Boolean(payload.isAdmin),
+    });
   } catch {
-    return res.status(401).json({ message: "登入狀態已失效" });
+    return res.status(401).json({ message: "登入已失效" });
   }
 });
 
-/* ---------- Email 驗證碼 ---------- */
+/* ---------- Email 寄送驗證碼 ---------- */
 router.post("/send-email-code", async (req, res, next) => {
   try {
     const { email } = req.body ?? {};
     if (!email || !EMAIL_REGEX.test(email)) {
-      return res.status(400).json({ message: "請輸入正確的 Email" });
+      return res.status(400).json({ message: "請輸入正確 Email" });
     }
 
     const userResult = await pool.query(
@@ -63,7 +74,7 @@ router.post("/send-email-code", async (req, res, next) => {
       [email]
     );
     if (userResult.rowCount > 0 && userResult.rows[0].email_verified) {
-      return res.status(409).json({ message: "此 Email 已完成註冊" });
+      return res.status(409).json({ message: "Email 已註冊" });
     }
 
     const code = crypto.randomInt(100000, 1000000).toString();
@@ -80,7 +91,7 @@ router.post("/send-email-code", async (req, res, next) => {
     );
 
     await sendVerificationEmail(email, code);
-    res.json({ message: "驗證碼已寄出" });
+    res.json({ message: "驗證碼已送出" });
   } catch (err) {
     next(err);
   }
@@ -91,13 +102,13 @@ router.post("/register-email", async (req, res, next) => {
   try {
     const { email, password, verificationCode } = req.body ?? {};
     if (!email || !EMAIL_REGEX.test(email)) {
-      return res.status(400).json({ message: "請輸入正確的 Email" });
+      return res.status(400).json({ message: "請輸入正確 Email" });
     }
     if (!password || password.length < 6) {
-      return res.status(400).json({ message: "密碼至少需要 6 個字元" });
+      return res.status(400).json({ message: "密碼至少 6 碼" });
     }
     if (!verificationCode || !/^\d{6}$/.test(verificationCode)) {
-      return res.status(400).json({ message: "請輸入 6 位數驗證碼" });
+      return res.status(400).json({ message: "驗證碼格式錯誤" });
     }
 
     const verification = await pool.query(
@@ -111,7 +122,7 @@ router.post("/register-email", async (req, res, next) => {
     }
     const record = verification.rows[0];
     if (record.is_used) {
-      return res.status(400).json({ message: "驗證碼已使用，請重新取得" });
+      return res.status(400).json({ message: "驗證碼已使用，請重新索取" });
     }
     if (record.expires_at < new Date()) {
       return res.status(400).json({ message: "驗證碼已過期" });
@@ -123,32 +134,38 @@ router.post("/register-email", async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const existingUser = await pool.query(
-      "SELECT id, email_verified FROM users WHERE email = $1 LIMIT 1",
+      "SELECT id, email_verified, is_admin FROM users WHERE email = $1 LIMIT 1",
       [email]
     );
 
     let userId;
+    let isAdminFlag = isAdminEmail(email);
+
     if (existingUser.rowCount > 0) {
-      if (existingUser.rows[0].email_verified) {
-        return res.status(409).json({ message: "此 Email 已註冊" });
+      const existing = existingUser.rows[0];
+      if (existing.email_verified) {
+        return res.status(409).json({ message: "Email 已註冊" });
       }
       const updated = await pool.query(
         `UPDATE users
             SET password_hash = $1,
-                email_verified = TRUE
+                email_verified = TRUE,
+                is_admin = $3
           WHERE id = $2
-        RETURNING id`,
-        [passwordHash, existingUser.rows[0].id]
+        RETURNING id, is_admin`,
+        [passwordHash, existing.id, existing.is_admin || isAdminFlag]
       );
       userId = updated.rows[0].id;
+      isAdminFlag = updated.rows[0].is_admin;
     } else {
       const inserted = await pool.query(
-        `INSERT INTO users (email, password_hash, email_verified)
-         VALUES ($1, $2, TRUE)
-         RETURNING id`,
-        [email, passwordHash]
+        `INSERT INTO users (email, password_hash, email_verified, is_admin)
+         VALUES ($1, $2, TRUE, $3)
+         RETURNING id, is_admin`,
+        [email, passwordHash, isAdminFlag]
       );
       userId = inserted.rows[0].id;
+      isAdminFlag = inserted.rows[0].is_admin;
     }
 
     await pool.query(
@@ -156,7 +173,7 @@ router.post("/register-email", async (req, res, next) => {
       [email]
     );
 
-    const token = signToken({ id: userId, email });
+    const token = signToken({ id: userId, email, is_admin: isAdminFlag });
     sendAuthCookie(res, token).json({ message: "註冊成功", userId });
   } catch (err) {
     next(err);
@@ -168,38 +185,40 @@ router.post("/login-email", async (req, res, next) => {
   try {
     const { email, password } = req.body ?? {};
     if (!email || !EMAIL_REGEX.test(email) || !password) {
-      return res.status(400).json({ message: "Email 或密碼格式不正確" });
+      return res.status(400).json({ message: "Email 或密碼格式錯誤" });
     }
 
     const { rows } = await pool.query(
-      `SELECT id, password_hash
+      `SELECT id, password_hash, is_admin
          FROM users
         WHERE email = $1 AND email_verified = TRUE
         LIMIT 1`,
       [email]
     );
     if (!rows.length) {
-      return res.status(401).json({ message: "帳號不存在或未驗證" });
-    }
-
-    if (!user.password_hash) {
-      return res
-        .status(401)
-        .json({ message: "此帳號尚未設定密碼，請用 Google 登入或先設定密碼" });
+      return res.status(401).json({ message: "帳號不存在或尚未驗證" });
     }
 
     const user = rows[0];
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ message: "Email 或密碼錯誤" });
+    if (!user.password_hash) {
+      return res
+        .status(401)
+        .json({ message: "此帳號為 Google 登入，請改用 Google 登入方式" });
+    }
 
-    const token = signToken({ id: user.id, email });
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) {
+      return res.status(401).json({ message: "Email 或密碼錯誤" });
+    }
+
+    const token = signToken({ id: user.id, email, is_admin: user.is_admin });
     sendAuthCookie(res, token).json({ userId: user.id });
   } catch (err) {
     next(err);
   }
 });
 
-// /* ---------- 匿名登入 ---------- */
+/* ---------- 訪客登入 ---------- */
 router.post("/login-guest", async (_req, res, next) => {
   try {
     const email = generateGuestEmail();

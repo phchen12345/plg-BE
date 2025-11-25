@@ -313,6 +313,10 @@ const createLogisticsOrder = async (tradeNo, pendingOrder) => {
 router.post("/checkout", requireAuth, async (req, res, next) => {
   try {
     const { tradeNo, totalAmount, description, returnURL, order } = req.body;
+    const itemNames =
+      order?.items
+        ?.map((item) => `${item.name ?? "PLG 商品"} x${item.quantity}`)
+        .join("#") || "PLG 商品";
 
     if (!tradeNo || !totalAmount) {
       return res.status(400).json({ message: "缺少交易編號或金額" });
@@ -336,7 +340,7 @@ router.post("/checkout", requireAuth, async (req, res, next) => {
       PaymentType: "aio",
       TotalAmount: String(total),
       TradeDesc: description ?? "PLG order",
-      ItemName: "PLG item",
+      ItemName: itemNames ?? "PLG item",
       ReturnURL:
         returnURL ?? "https://plg-be.onrender.com/api/ecpay/payment-return",
       ClientBackURL: "https://plg-test.vercel.app/orders",
@@ -419,7 +423,7 @@ router.post("/payment-return", async (req, res) => {
                   : shipping.method === "familymart"
                   ? "全家運費"
                   : "7-11 運費",
-              price: ((orderPayload.totals?.shippingFee ?? 0) / 100).toFixed(2),
+              price: orderPayload.totals?.shippingFee.toFixed(2),
               code: shipping.method,
               source: "Custom",
             },
