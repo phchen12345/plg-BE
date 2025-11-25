@@ -409,6 +409,23 @@ router.post("/payment-return", async (req, res) => {
     const shipping = orderPayload.shipping ?? {};
     const shippingStore = shipping.store ?? null;
 
+    const shippingLines =
+      shipping.method === "home" || shipping.method === "familymart"
+        ? [
+            {
+              title:
+                shipping.method === "home"
+                  ? "宅配運費"
+                  : shipping.method === "familymart"
+                  ? "全家運費"
+                  : "7-11 運費",
+              price: ((orderPayload.totals?.shippingFee ?? 0) / 100).toFixed(2),
+              code: shipping.method,
+              source: "Custom",
+            },
+          ]
+        : [];
+
     const shopifyOrderPayload = {
       order: {
         line_items: lineItems.map((item) => ({
@@ -417,6 +434,7 @@ router.post("/payment-return", async (req, res) => {
           price: (item.priceCents ?? 0 / 100).toFixed(2),
           sku: String(item.productId),
         })),
+        shipping_lines: shippingLines,
         financial_status: "paid",
         fulfillment_status: "unfulfilled",
         tags:
