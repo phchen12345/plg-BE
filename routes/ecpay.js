@@ -227,32 +227,50 @@ const saveShopifyOrderRecord = async (userId, order) => {
     return;
   }
   const lineItemsSnapshot = mapLineItems(order.line_items ?? []);
+  const resolveShippingMethod = (order = {}, pendingOrder = {}) => {
+    if (pendingOrder?.shipping?.method) {
+      return pendingOrder.shipping.method;
+    }
+
+    const tags = (order.tags ?? "").toLowerCase();
+    if (tags.includes("plg-cvs-seveneleven")) return "seveneleven";
+    if (tags.includes("plg-cvs-familymart")) return "familymart";
+    if (tags.includes("plg-home-delivery")) return "home";
+    return null;
+  };
+
+  const shippingMethod = resolveShippingMethod(
+    order,
+    pendingOrder?.order_payload
+  );
   await pool.query(
     `INSERT INTO shopify_orders (
-       user_id,
-       shopify_order_id,
-       shopify_order_name,
-       shopify_order_number,
-       currency,
-       subtotal_price,
-       total_price,
-       financial_status,
-       fulfillment_status,
-       line_items
-     )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     ON CONFLICT (shopify_order_id)
-     DO UPDATE SET
-       currency = EXCLUDED.currency,
-       subtotal_price = EXCLUDED.subtotal_price,
-       total_price = EXCLUDED.total_price,
-       financial_status = EXCLUDED.financial_status,
-       fulfillment_status = EXCLUDED.fulfillment_status,
-       line_items = EXCLUDED.line_items,
-       user_id = EXCLUDED.user_id,
-       shopify_order_name = EXCLUDED.shopify_order_name,
-       shopify_order_number = EXCLUDED.shopify_order_number,
-       updated_at = NOW()`,
+     user_id,
+     shopify_order_id,
+     shopify_order_name,
+     shopify_order_number,
+     currency,
+     subtotal_price,
+     total_price,
+     financial_status,
+     fulfillment_status,
+     shipping_method,
+     line_items
+   )
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+   ON CONFLICT (shopify_order_id)
+   DO UPDATE SET
+     currency = EXCLUDED.currency,
+     subtotal_price = EXCLUDED.subtotal_price,
+     total_price = EXCLUDED.total_price,
+     financial_status = EXCLUDED.financial_status,
+     fulfillment_status = EXCLUDED.fulfillment_status,
+     shipping_method = EXCLUDED.shipping_method,
+     line_items = EXCLUDED.line_items,
+     user_id = EXCLUDED.user_id,
+     shopify_order_name = EXCLUDED.shopify_order_name,
+     shopify_order_number = EXCLUDED.shopify_order_number,
+     updated_at = NOW()`,
     [
       userId,
       order.id,
@@ -263,6 +281,7 @@ const saveShopifyOrderRecord = async (userId, order) => {
       order.total_price,
       order.financial_status,
       order.fulfillment_status,
+      shippingMethod,
       JSON.stringify(lineItemsSnapshot),
     ]
   );
